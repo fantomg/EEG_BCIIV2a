@@ -15,8 +15,8 @@ from sklearn.model_selection import train_test_split
 import models
 from preprocess import get_data
 
-# matplotlib.use('TkAgg')  # or 'QtAgg'
-matplotlib.use('QtAgg')  # or 'QtAgg'
+matplotlib.use('TkAgg')  # or 'QtAgg'
+# matplotlib.use('QtAgg')  # or 'QtAgg'
 
 
 def draw_learning_curves(history, sub):
@@ -334,7 +334,7 @@ def run():
     n_sub = 9
     n_classes = 4
     classes_labels = ['Left hand', 'Right hand', 'Foot', 'Tongue']
-    data_path = os.path.expanduser('~') + '/PycharmProjects/EEG_BCIIV_2a/dataset/'
+    data_path = os.path.expanduser('~') + '/PycharmProjects/EEG_BCIIV2a/dataset/'
 
     # Create a folder to store the results of the experiment
     results_path = os.getcwd() + "/results"
