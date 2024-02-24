@@ -1,62 +1,14 @@
+import os
+
+import mne
 import scipy.io as sio
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import shuffle
-from tensorflow.python.keras.utils.np_utils import to_categorical
+from tensorflow.keras.utils import to_categorical
 
 import numpy as np
-import scipy.fftpack
-import scipy
-
-def remove_artifacts(X, Y, m, alpha, fs):
-    def phase_space_reconstruction(time_series, m, tau):
-        n = len(time_series)
-        reconstructed = np.empty((n - (m - 1) * tau, m))
-        for i in range(m):
-            reconstructed[:, i] = time_series[i * tau:n - (m - 1) * tau + i * tau]
-        return reconstructed
-
-    def two_dimensional_fft(matrix):
-        return scipy.fftpack.fft2(matrix)
-
-    def escort_distribution(p_alpha):
-        return p_alpha / np.sum(p_alpha)
-
-    def renyi_transfer_entropy(Cx, Cy, alpha):
-        # Placeholder for joint and conditional probabilities calculation
-        p_alpha_joint = np.random.rand()  # Replace with actual joint probabilities
-        p_alpha_cond = np.random.rand()  # Replace with actual conditional probabilities
-        rho_alpha = escort_distribution(p_alpha_joint)
-        R_alpha_joint = 1 / (1 - alpha) * np.log2(np.sum(p_alpha_joint ** alpha))
-        R_alpha_cond = 1 / (1 - alpha) * np.log2(np.sum(p_alpha_cond ** alpha / np.sum(rho_alpha ** alpha)))
-        return R_alpha_cond - R_alpha_joint
-
-    def calculate_BTSE(X, Y, m, alpha, fs):
-        X_reconstructed = phase_space_reconstruction(X, m, 1)
-        Y_reconstructed = phase_space_reconstruction(Y, m, 1)
-        X_fft = two_dimensional_fft(X_reconstructed)
-        Y_fft = two_dimensional_fft(Y_reconstructed)
-        # Symbolize matrices (Placeholder, replace with actual symbolization process)
-        Cx = X_fft
-        Cy = Y_fft
-        RTE_m = renyi_transfer_entropy(Cx, Cy, alpha)
-        RTE_m1 = renyi_transfer_entropy(Cx, Cy, alpha)  # Placeholder for RTE at m + 1
-        BTSE = (RTE_m1 - RTE_m) / np.log((m + 1) / (m - 1))
-        return BTSE
-
-    # Iterate over trials and remove artifacts using BTSE
-    for trial in range(X.shape[0]):
-        # Assuming X is the input data
-        X_trial = X[trial, 0, :, :]
-        # Assuming Y is the target data
-        Y_trial = Y[trial, 0, :, :]
-        # Calculate BTSE for the trial
-        btse_value = calculate_BTSE(X_trial, Y_trial, m, alpha, fs)
-        # Use the btse_value to assist in removing artifacts from the trial
-
-    # Return the modified data
-    return X, Y
-
+from BTSE import calculate_BTSE
 
 def load_BCI2a_data(data_path, subject, training, all_trials=True):
     """ Loading and Dividing of the dataset set based on the subject-specific
@@ -82,7 +34,7 @@ def load_BCI2a_data(data_path, subject, training, all_trials=True):
     """
 
     # Define MI-trials parameters
-    n_channels = 22
+    n_channels = 25
     n_tests = 6 * 48
     window_Length = 7 * 250
 
@@ -92,7 +44,8 @@ def load_BCI2a_data(data_path, subject, training, all_trials=True):
     t2 = int(6 * fs)  # end time_point
 
     class_return = np.zeros(n_tests)
-    data_return = np.zeros((n_tests, n_channels, window_Length))
+    data_return = np.zeros((n_tests, 22, window_Length))
+    data_eog = np.zeros((n_tests, 3, window_Length))  # Store data for 3 EOG channels
 
     NO_valid_trial = 0
     if training:
@@ -114,14 +67,47 @@ def load_BCI2a_data(data_path, subject, training, all_trials=True):
                 continue
             data_return[NO_valid_trial, :, :] = np.transpose(
                 a_X[int(a_trial[trial]):(int(a_trial[trial]) + window_Length), :22])
+            data_eog[NO_valid_trial, :, :] = np.transpose(
+                a_X[int(a_trial[trial]):(int(a_trial[trial]) + window_Length), 22:25])
             class_return[NO_valid_trial] = int(a_y[trial])
             NO_valid_trial += 1
 
     data_return = data_return[0:NO_valid_trial, :, t1:t2]
+    data_eog = data_eog[0:NO_valid_trial, :, t1:t2]
     class_return = class_return[0:NO_valid_trial]
     class_return = (class_return - 1).astype(int)
 
-    return data_return, class_return
+    return data_return, data_eog, class_return
+
+def remove_artifacts_and_filter(data_return, data_eog, threshold, segment_length):
+    eeg_return = np.zeros_like(data_return)  # Placeholder for processed EEG data
+    num_segments = len(data_return) // segment_length
+
+    for i in range(num_segments):
+        start_idx = i * segment_length
+        end_idx = (i + 1) * segment_length
+
+        segment_eeg = data_return[start_idx:end_idx]
+        segment_eog = data_eog[start_idx:end_idx]
+
+        # Calculate BTSE for EEG and EOG channels
+        BTSE_eeg = calculate_BTSE(segment_eeg[:, :22], segment_eog, m=3, alpha=2, fs=100)
+        BTSE_eog = calculate_BTSE(segment_eeg[:, 22:25], segment_eog, m=3, alpha=2, fs=100)
+
+        # Apply artifact removal and filtering based on BTSE values
+        if BTSE_eeg < threshold:
+            # Apply Infomax ICA for noise reduction
+            raw = mne.io.RawArray(segment_eeg.T, info=None)  # Create MNE Raw object
+            ica = mne.preprocessing.ICA(method='infomax')  # Initialize ICA with Infomax method
+            ica.fit(raw)  # Fit ICA on the EEG data
+            ica.apply(raw)  # Apply ICA to remove noise
+            # Get the cleaned EEG data after ICA
+            cleaned_data = raw.get_data().T
+            eeg_return[start_idx:end_idx] = cleaned_data
+        else:
+            eeg_return[start_idx:end_idx] = segment_eeg
+
+    return eeg_return
 
 
 def standardize_data(X_train, X_test, channels):
@@ -145,14 +131,15 @@ def get_data(path, subject, dataset='BCI2a', classes_labels='all', isStandard=Tr
             """
     if (dataset == 'BCI2a'):
         path = path + 's{:}/'.format(subject + 1)
-        X_train, y_train = load_BCI2a_data(path, subject + 1, True)
-        X_test, y_test = load_BCI2a_data(path, subject + 1, False)
+        X_train,data_eog, y_train = load_BCI2a_data(path, subject + 1, True)
+        X_test,data_eog, y_test = load_BCI2a_data(path, subject + 1, False)
     # elif (dataset == 'HGD'):
     #     X_train, y_train = load_HGD_data(path, subject+1, True)
     #     X_test, y_test = load_HGD_data(path, subject+1, False)
     else:
         raise Exception("'{}' dataset is not supported yet!".format(dataset))
 
+    remove_artifacts_and_filter(X_train, data_eog, 0.5, 250)
     # shuffle the dataset
     if isShuffle:
         X_train, y_train = shuffle(X_train, y_train, random_state=42)
