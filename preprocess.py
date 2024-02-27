@@ -1,7 +1,10 @@
 import os
 
-import mne
+
 import scipy.io as sio
+from mne import create_info
+from mne.io import RawArray
+from mne.preprocessing import ICA
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import shuffle
@@ -35,7 +38,7 @@ def load_BCI2a_data(data_path, subject, training, all_trials=True):
 
     # Define MI-trials parameters
     n_channels = 25
-    n_tests = 6 * 48
+    n_tests = 12 * 48
     window_Length = 7 * 250
 
     # Define MI trial window
@@ -74,40 +77,61 @@ def load_BCI2a_data(data_path, subject, training, all_trials=True):
 
     data_return = data_return[0:NO_valid_trial, :, t1:t2]
     data_eog = data_eog[0:NO_valid_trial, :, t1:t2]
+    # print("data_eeg 的形状:", data_return.shape)
+    # print("data_eog 的形状:", data_eog.shape)
+    # print(data_eog)
     class_return = class_return[0:NO_valid_trial]
     class_return = (class_return - 1).astype(int)
 
     return data_return, data_eog, class_return
 
+
 def remove_artifacts_and_filter(data_return, data_eog, threshold, segment_length):
     eeg_return = np.zeros_like(data_return)  # Placeholder for processed EEG data
     num_segments = len(data_return) // segment_length
+    print("num_segments:", num_segments)
 
     for i in range(num_segments):
         start_idx = i * segment_length
         end_idx = (i + 1) * segment_length
-
         segment_eeg = data_return[start_idx:end_idx]
         segment_eog = data_eog[start_idx:end_idx]
 
-        # Calculate BTSE for EEG and EOG channels
-        BTSE_eeg = calculate_BTSE(segment_eeg[:, :22], segment_eog, m=3, alpha=2, fs=100)
-        BTSE_eog = calculate_BTSE(segment_eeg[:, 22:25], segment_eog, m=3, alpha=2, fs=100)
+        for j in range(22):  # Iterate over each EEG channel
+            for k in range(3):  # Iterate over each EOG channel
+                BTSE_eeg = calculate_BTSE(segment_eeg[:, j].flatten(), segment_eog[:, k].flatten(), m=8, alpha=3,
+                                          fs=250)
+                if -threshold < BTSE_eeg < threshold:
+                    # Create MNE Info object for EEG data
+                    ch_names = [f'EEG{j + 1}' for j in range(22)]
+                    info = create_info(ch_names, sfreq=250, ch_types='eeg')
 
-        # Apply artifact removal and filtering based on BTSE values
-        if BTSE_eeg < threshold:
-            # Apply Infomax ICA for noise reduction
-            raw = mne.io.RawArray(segment_eeg.T, info=None)  # Create MNE Raw object
-            ica = mne.preprocessing.ICA(method='infomax')  # Initialize ICA with Infomax method
-            ica.fit(raw)  # Fit ICA on the EEG data
-            ica.apply(raw)  # Apply ICA to remove noise
-            # Get the cleaned EEG data after ICA
-            cleaned_data = raw.get_data().T
-            eeg_return[start_idx:end_idx] = cleaned_data
-        else:
-            eeg_return[start_idx:end_idx] = segment_eeg
+                    # Create RawArray object from EEG segment
+                    raw_eeg = RawArray(segment_eeg.transpose(1, 0, 2).reshape(22, -1), info)
 
-    return eeg_return
+                    # Fit ICA with Raw object
+                    ica = ICA(n_components=15, max_iter="auto", random_state=97)
+                    ica.fit(raw_eeg)
+
+                    # Create MNE Info object for EOG data
+                    eog_ch_names = [f'EOG{k + 1}' for k in range(3)]  # Assuming channel names like EOG1, EOG2, EOG3
+                    eog_info = create_info(eog_ch_names, sfreq=250, ch_types='eog')
+
+                    # Create RawArray object from EOG segment
+                    # Ensure that the shape of the EOG data is (n_channels, n_samples)
+                    eog_raw = RawArray(segment_eog.transpose(1, 0, 2).reshape(3, -1), eog_info)
+
+                    # Find EOG components and exclude them
+                    eog_indices, eog_score = ica.find_bads_eog(eog_raw )
+                    ica.exclude = eog_indices
+
+                    # Apply ICA solution to remove EOG artifacts
+                    cleaned_segment_eeg = ica.apply(raw_eeg.get_data().T)
+
+                    # Replace original EEG segment with cleaned EEG segment
+                    data_return[start_idx:end_idx, j] = cleaned_segment_eeg.T
+
+    return data_return
 
 
 def standardize_data(X_train, X_test, channels):
@@ -131,15 +155,16 @@ def get_data(path, subject, dataset='BCI2a', classes_labels='all', isStandard=Tr
             """
     if (dataset == 'BCI2a'):
         path = path + 's{:}/'.format(subject + 1)
-        X_train,data_eog, y_train = load_BCI2a_data(path, subject + 1, True)
-        X_test,data_eog, y_test = load_BCI2a_data(path, subject + 1, False)
+        X_train, data_eogx, y_train = load_BCI2a_data(path, subject + 1, True)
+        X_test, data_eogc, y_test = load_BCI2a_data(path, subject + 1, False)
     # elif (dataset == 'HGD'):
     #     X_train, y_train = load_HGD_data(path, subject+1, True)
     #     X_test, y_test = load_HGD_data(path, subject+1, False)
     else:
         raise Exception("'{}' dataset is not supported yet!".format(dataset))
-
-    remove_artifacts_and_filter(X_train, data_eog, 0.5, 250)
+    print("开始清理")
+    X_train = remove_artifacts_and_filter(X_train, data_eogx, 1, 144)
+    X_test = remove_artifacts_and_filter(X_test, data_eogc, 1, 144)
     # shuffle the dataset
     if isShuffle:
         X_train, y_train = shuffle(X_train, y_train, random_state=42)
@@ -159,3 +184,4 @@ def get_data(path, subject, dataset='BCI2a', classes_labels='all', isStandard=Tr
         X_train, X_test = standardize_data(X_train, X_test, N_ch)
 
     return X_train, y_train, y_train_onehot, X_test, y_test, y_test_onehot
+get_data(os.path.expanduser('~') + '/PycharmProjects/EEG_BCIIV2a/dataset/',1)
