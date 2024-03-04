@@ -3,7 +3,16 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 from pyinform import transfer_entropy
+from BTSE import calculate_BTSE
 from mne.preprocessing import ICA
+desired_length = 323162
+num_bins = 1000
+k = 1
+
+def bin_data(data, bins):
+    hist, bin_edges = np.histogram(data, bins=bins)
+    binned_data = np.digitize(data, bin_edges[:-1]) - 1  # subtract 1 to start binning from 0
+    return binned_data
 
 matplotlib.use('TkAgg')
 
@@ -43,9 +52,9 @@ print()
 raw_gdf = mne.io.RawArray(data, raw_gdf.info, verbose="ERROR")
 print(raw_gdf.info)
 
-# 画出EEG通道图
-raw_gdf.plot()
-plt.show()
+# # 画出EEG通道图
+# raw_gdf.plot()
+# plt.show()
 
 # 选择范围为Cue后 1s - 4s 的数据
 tmin, tmax = 1.5, 6.
@@ -55,6 +64,10 @@ event_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
 epochs = mne.Epochs(raw_gdf, events, event_id, tmin, tmax, proj=True, baseline=None, preload=True)
 print(epochs)
 
+# # 画出EEG通道图
+# epochs.plot()
+# plt.show()
+
 # 切片，获取 events 的最后一列
 labels = epochs.events[:, -1]
 # Get all epochs as a 3D array.
@@ -62,32 +75,33 @@ data = epochs.get_data(copy=True)
 print(labels.shape)
 print(data.shape)
 
-# 获取 EEG 通道名称列表
-eeg_channels = raw_gdf
+embedding_data_list_2D_trimmed = [data[:desired_length, 0] for data in data]
+# print(f" embedding_data_list_2D_trimmed: {embedding_data_list_2D_trimmed}")
+embedding_data_list_2D_binned = [bin_data(data, num_bins) for data in embedding_data_list_2D_trimmed]
+# print(f" embedding_data_list_2D_binned: {embedding_data_list_2D_binned}")
 
-# 定义一个字典来存储计算结果
+channels = raw_gdf.ch_names
+# Dictionary to store transfer entropy results
 TE_results = {}
 
-# 设置嵌入维度
-k = 1
-
-# 遍历每个通道计算传递熵
-for i, source_channel in enumerate(epochs):
-    for j, target_channel in enumerate(epochs):
-        if i != j:  # To avoid computing Transfer Entropy for the same channel
+# Compute Transfer Entropy for all channel pairs
+for i, source_channel in enumerate(channels):
+    for j, target_channel in enumerate(channels):
+        if i != j:  # Avoid computing Transfer Entropy for the same channel
             try:
-                TE = transfer_entropy(data[:, i, :], data[:, j, :], k)
-                key = f"{source_channel}_to_{target_channel}"
-                TE_results[key] = TE
-                print(f"Transfer Entropy from {source_channel} to {target_channel}: {TE}")
+                for k in range(1126):
+                    BTSE = transfer_entropy(embedding_data_list_2D_binned[i], embedding_data_list_2D_binned[j], 1)
+                    key = f"{source_channel}_to_{target_channel}"
+                    TE_results[key] = BTSE
+
+                    if k / 100 == 10:
+                        # print(f" source_channel {data[:, i, k]},target_channel {data[:, j, k]}")
+                        print(f"Transfer Entropy from {source_channel} to {target_channel}: {BTSE}")
             except Exception as e:
                 print(f"Error computing Transfer Entropy from {source_channel} to {target_channel}: {e}")
 
 
 
-# # 画出EEG通道图
-# epochs.plot()
-# plt.show()
 # # Perform Independent Component Analysis (ICA) to remove artifacts
 # ica = ICA(n_components=25, random_state=97, method="infomax")
 # ica.fit(raw_gdf)
