@@ -102,30 +102,3 @@ for i, source_channel in enumerate(channels):
             except Exception as e:
                 print(f"Error computing Transfer Entropy from {source_channel} to {target_channel}: {e}")
 
-# # Perform Independent Component Analysis (ICA) to remove artifacts
-# ica = ICA(n_components=25, random_state=97, method="infomax")
-# ica.fit(raw_gdf)
-#
-# # ica.exclude = []
-# # Exclude components related to eye movements (EOG) or other artifacts
-# # eog_indices, _ = ica.find_bads_eog(epochs)
-# ica.exclude = [23, 24, 25]
-#
-# # plot diagnostics
-# ica.plot_properties(raw_gdf, picks=[23, 24, 25])
-#
-# # plot ICs applied to raw data, with EOG matches highlighted
-# ica.plot_sources(raw_gdf, show_scrollbars=False)
-
-# # Apply ICA to remove artifact components
-# ica.apply(raw_gdf)
-#
-# # Plot the cleaned EEG data
-# raw_gdf.plot()
-#
-# plt.show()
-# # Save the cleaned epochs data
-# # cleaned_epochs_file = 'cleaned_epochs-epo.fif'
-# # epochs.save(cleaned_epochs_file)
-#
-# # Further analysis or visualization can be performed on the cleaned epochs data
