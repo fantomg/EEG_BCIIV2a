@@ -5,14 +5,17 @@ import numpy as np
 from pyinform import transfer_entropy
 from BTSE import calculate_BTSE
 from mne.preprocessing import ICA
-desired_length = 323162
-num_bins = 1000
+
+desired_length = 255602
+num_bins = 100
 k = 1
+
 
 def bin_data(data, bins):
     hist, bin_edges = np.histogram(data, bins=bins)
     binned_data = np.digitize(data, bin_edges[:-1]) - 1  # subtract 1 to start binning from 0
     return binned_data
+
 
 matplotlib.use('TkAgg')
 
@@ -87,20 +90,17 @@ TE_results = {}
 # Compute Transfer Entropy for all channel pairs
 for i, source_channel in enumerate(channels):
     for j, target_channel in enumerate(channels):
-        if i != j:  # Avoid computing Transfer Entropy for the same channel
+        if target_channel not in ["EOG-left", "EOG-central", "EOG-right"] and source_channel in ["EOG-left",
+                                                                                                 "EOG-central",
+                                                                                                 "EOG-right"]:  # Avoid computing Transfer Entropy for the same channel
             try:
-                for k in range(1126):
-                    BTSE = transfer_entropy(embedding_data_list_2D_binned[i], embedding_data_list_2D_binned[j], 1)
-                    key = f"{source_channel}_to_{target_channel}"
-                    TE_results[key] = BTSE
-
-                    if k / 100 == 10:
-                        # print(f" source_channel {data[:, i, k]},target_channel {data[:, j, k]}")
-                        print(f"Transfer Entropy from {source_channel} to {target_channel}: {BTSE}")
+                BTSE = transfer_entropy(embedding_data_list_2D_binned[i], embedding_data_list_2D_binned[j], 1)
+                key = f"{source_channel}_to_{target_channel}"
+                TE_results[key] = BTSE
+                # print(f" source_channel {data[:, i, k]},target_channel {data[:, j, k]}")
+                print(f"Transfer Entropy from {source_channel} to {target_channel}: {BTSE}")
             except Exception as e:
                 print(f"Error computing Transfer Entropy from {source_channel} to {target_channel}: {e}")
-
-
 
 # # Perform Independent Component Analysis (ICA) to remove artifacts
 # ica = ICA(n_components=25, random_state=97, method="infomax")

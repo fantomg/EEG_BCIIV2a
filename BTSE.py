@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def phase_space_reconstruction(time_series, m, tau):
     n = len(time_series)
     reconstructed = np.empty((n - (m - 1) * tau, m))
@@ -7,18 +8,22 @@ def phase_space_reconstruction(time_series, m, tau):
         reconstructed[:, i] = time_series[i * tau:n - (m - 1) * tau + i * tau]
     return reconstructed
 
+
 def two_dimensional_fft(matrix):
     return np.fft.fft2(matrix)
+
 
 def calculate_joint_probabilities(X, Y, m, alpha):
     p_alpha_joint = np.abs(X * Y.conj()) ** alpha
     return p_alpha_joint
 
+
 def calculate_conditional_probabilities(X, Y, m, alpha):
     p_alpha_cond = np.abs(Y) ** alpha
     return p_alpha_cond
 
-def calculate_BTSE(X, Y, m, alpha, fs):
+
+def calculate_BTSE(X, Y, m, alpha):
     # Phase space reconstruction
     X_reconstructed = phase_space_reconstruction(X, m, 1)
     Y_reconstructed = phase_space_reconstruction(Y, m, 1)
@@ -40,9 +45,10 @@ def calculate_BTSE(X, Y, m, alpha, fs):
 
     # Calculate BTSE
     BTSE = (R_alpha_cond - R_alpha_joint) * np.log((m + 1) / (m - 1))
-    return BTSE
-
-
+    min_val = 0  # Minimum value for normalization
+    max_val = 1  # Maximum value for normalization
+    normalized_btse = (BTSE - np.min(BTSE)) / (np.max(BTSE) - np.min(BTSE)) * (max_val - min_val) + min_val
+    return normalized_btse
 
 # # Example usage
 # X = np.random.rand(1000)  # Replace with actual time series dataset x(t)
