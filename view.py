@@ -2,11 +2,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
+from asrpy import ASR
 from pyinform import transfer_entropy
-from mne.preprocessing import ICA
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 
+matplotlib.use('TkAgg')
+filename = "./dataset/A08T.gdf"
 desired_length = 255602
 num_bins = 100
 k = 1
@@ -17,10 +19,6 @@ def bin_data(data, bins):
     binned_data = np.digitize(data, bin_edges[:-1]) - 1  # subtract 1 to start binning from 0
     return binned_data
 
-
-matplotlib.use('TkAgg')
-
-filename = "./dataset/A08T.gdf"
 
 raw_gdf = mne.io.read_raw_gdf(filename, stim_channel="auto", verbose='ERROR')
 
@@ -50,8 +48,6 @@ events, events_id = mne.events_from_annotations(raw_gdf)
 print('Number of events:', len(events))
 print(events_id)
 print(events)
-
-print()
 # 利用mne.io.RawArray类重新创建Raw对象，已经没有nan数据了
 raw_gdf = mne.io.RawArray(data, raw_gdf.info, verbose="ERROR")
 print(raw_gdf.info)
@@ -194,3 +190,60 @@ plt.title('Influence of EOG on EEG Channels via PCA')
 plt.xticks(range(1, 23), labels=channel_names, rotation=45)
 plt.tight_layout()
 plt.show()
+
+# 假设transformed_features是一个包含每个通道伪影影响程度的numpy数组
+low_threshold = -0.2  # 示例阈值，实际应根据数据调整
+high_threshold = 0.2  # 示例阈值，实际应根据数据调整
+
+# 通道索引转换为通道名称
+channel_names = [
+    'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+    'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+    'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+    'P1', 'Pz', 'P2', 'POz'
+]
+
+low_impact_channels = [channel_names[i] for i, feature in enumerate(transformed_features.flatten()) if
+                       feature <= low_threshold]
+medium_impact_channels = [channel_names[i] for i, feature in enumerate(transformed_features.flatten()) if
+                          low_threshold < feature <= high_threshold]
+high_impact_channels = [channel_names[i] for i, feature in enumerate(transformed_features.flatten()) if
+                        feature > high_threshold]
+
+# 定义每组的ASR参数
+asr_params_low = {'cutoff': 10, 'max_bad_chans': 0.2}
+asr_params_medium = {'cutoff': 15, 'max_bad_chans': 0.15}
+asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.1}
+
+# 创建一个新的Raw对象以避免在原始数据上直接修改
+raw_processed = raw_gdf.copy()
+
+# 应用ASR处理
+for group, params in zip([low_impact_channels, medium_impact_channels, high_impact_channels],
+                         [asr_params_low, asr_params_medium, asr_params_high]):
+    # 初始化ASR实例
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=params['cutoff'], max_bad_chans=params['max_bad_chans'], )
+    # 训练ASR
+    asr.fit(raw_processed, picks=group)
+
+    # 应用ASR变换
+    raw_processed = asr.transform(raw_processed, picks=group)
+# 加载或创建通道位置信息
+montage = mne.channels.make_standard_montage('standard_1020')
+
+# 应用通道位置信息到你的raw数据
+
+
+# 现在你可以重新尝试绘制，这次应该可以启用空间颜色了
+evoked1 = epochs.average(picks=channel_names)
+evoked1.set_montage(montage)
+evoked1.plot(spatial_colors=True, titles="Before ASR")
+
+cleaned_avg = mne.Epochs(raw_processed, events, event_id, 1.5, 6, baseline=None, preload=True, picks=channel_names)
+cleaned_avg.set_montage(montage)
+evoked2 = cleaned_avg.average()
+evoked2.plot(spatial_colors=True, titles="After ASR")
+difference_evoked = mne.combine_evoked([evoked1, evoked2], weights=[1, -1])
+
+# 使用plot方法绘制差异波形
+difference_evoked.plot(spatial_colors=True, gfp=True, titles="Difference (Before - After ASR)")
