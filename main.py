@@ -329,10 +329,10 @@ def getModel(model_name, dataset_conf, from_logits=False):
 def run():
     # Define dataset parameters
     dataset = 'BCI2a'  # Options: 'BCI2a'
-    in_samples = 1125
+    in_samples = 1126
     n_channels = 22
-    n_sub = 9
-    n_classes = 4
+    n_sub = 1
+    n_classes = 15
     classes_labels = ['Left hand', 'Right hand', 'Foot', 'Tongue']
     data_path = os.path.expanduser('~') + '/PycharmProjects/EEG_BCIIV2a/dataset/'
 
