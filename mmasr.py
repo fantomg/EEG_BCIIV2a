@@ -6,6 +6,8 @@ from asrpy import ASR
 from pyinform import transfer_entropy
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
+import analyze_merits
+from sklearn.metrics import mean_squared_error
 
 matplotlib.use('TkAgg')
 
@@ -48,7 +50,6 @@ def read_raw_gdf(filename):
     # 利用mne.io.RawArray类重新创建Raw对象，已经没有nan数据了
     raw_gdf = mne.io.RawArray(data, raw_gdf.info, verbose="ERROR")
     print(raw_gdf.info)
-
     # # 画出EEG通道图
     # raw_gdf.plot()
     # plt.show()
@@ -57,12 +58,12 @@ def read_raw_gdf(filename):
 
 def get_epochs(raw_gdf, events, events_id):
     # 选择范围为Cue后 1s - 4s 的数据
-    tmin, tmax = 1.5, 6.
+    tmin, tmax = 1.5, 5.995
     # 四类 MI 对应的 events_id
-    # events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
+    events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
 
     epochs = mne.Epochs(raw_gdf, events, events_id, tmin, tmax, proj=True, baseline=None, preload=True,
-                        event_repeated='merge')
+                        event_repeated='drop')
     # print(epochs)
 
     # # 画出EEG通道图
@@ -86,7 +87,13 @@ def pca_TE_PSD(data, raw_gdf):
     embedding_data_list_2D_binned = [bin_data(data, num_bins) for data in embedding_data_list_2D_trimmed]
     # print(f" embedding_data_list_2D_binned: {embedding_data_list_2D_binned}")
 
-    channels = raw_gdf.ch_names
+    # channels = raw_gdf.ch_names
+    channels = [
+        'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+        'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+        'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+        'P1', 'Pz', 'P2', 'POz', 'EOG-left', 'EOG-central', 'EOG-right'
+    ]
     # Dictionary to store transfer entropy results
 
     # Compute Transfer Entropy for all channel pairs
@@ -131,9 +138,9 @@ def pca_TE_PSD(data, raw_gdf):
     # 计算每个通道的平均PSD
     psds_dict = {}
     for ch_idx in range(num_channels):
-        ch_name = raw_gdf.ch_names[ch_idx]
+        ch_name = channels[ch_idx]
         # 提取单个通道的数据
-        ch_data = data[:, ch_idx, :]
+        ch_data = data[:, ch_idx]
         # 计算PSD
         psd, freqs = mne.time_frequency.psd_array_welch(ch_data, 250, fmin=fmin, fmax=fmax,
                                                         n_fft=n_fft,
@@ -143,9 +150,9 @@ def pca_TE_PSD(data, raw_gdf):
 
     # 计算所有通道对之间的PSD相似度
     for i in range(num_channels):
-        channel_i = raw_gdf.ch_names[i]
+        channel_i = channels[i]
         for j in range(i + 1, num_channels):  # 使用i+1开始，避免重复计算和自我比较
-            channel_j = raw_gdf.ch_names[j]
+            channel_j = channels[j]
             # 计算两个通道之间PSD的相似度
             corr_coef, _ = pearsonr(psds_dict[channel_i], psds_dict[channel_j])
             psd_similarities[i, j] = corr_coef
@@ -180,14 +187,14 @@ def pca_TE_PSD(data, raw_gdf):
         'P1', 'Pz', 'P2', 'POz'
     ]
 
-    plt.figure(figsize=(12, 8))
-    plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
-    plt.xlabel('EEG Channel')
-    plt.ylabel('PCA Transformed Feature Value')
-    plt.title('Influence of EOG on EEG Channels via PCA')
-    plt.xticks(range(1, 23), labels=channel_names, rotation=45)
-    plt.tight_layout()
-    plt.show()
+    # plt.figure(figsize=(12, 8))
+    # plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
+    # plt.xlabel('EEG Channel')
+    # plt.ylabel('PCA Transformed Feature Value')
+    # plt.title('Influence of EOG on EEG Channels via PCA')
+    # plt.xticks(range(1, 23), labels=channel_names, rotation=45)
+    # plt.tight_layout()
+    # plt.show()
     return transformed_features
 
 
@@ -200,8 +207,12 @@ def tpasr(transformed_features, raw_gdf):
     one_third_index = len(sorted_features) // 3
     two_thirds_index = 2 * len(sorted_features) // 3
 
-    low_threshold = round(float(sorted_features[one_third_index]), 3)
-    high_threshold = round(float(sorted_features[two_thirds_index]), 3)
+    # 假设 sorted_features 是一个排序后的一维数组
+    low_threshold = round(float(sorted_features[one_third_index]), 3) if np.isscalar(
+        sorted_features[one_third_index]) else round(float(sorted_features[one_third_index][0]), 3)
+    high_threshold = round(float(sorted_features[two_thirds_index]), 3) if np.isscalar(
+        sorted_features[two_thirds_index]) else round(float(sorted_features[two_thirds_index][0]), 3)
+
     # 通道索引转换为通道名称
     channel_names = [
         'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
@@ -220,9 +231,9 @@ def tpasr(transformed_features, raw_gdf):
     print(medium_impact_channels)
     print(high_impact_channels)
     # 定义每组的ASR参数
-    asr_params_low = {'cutoff': 10, 'max_bad_chans': 0.2}
-    asr_params_medium = {'cutoff': 15, 'max_bad_chans': 0.15}
-    asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.1}
+    asr_params_low = {'cutoff': 20, 'max_bad_chans': 0.3}
+    asr_params_medium = {'cutoff': 25, 'max_bad_chans': 0.2}
+    asr_params_high = {'cutoff': 30, 'max_bad_chans': 0.1}
 
     # 创建一个新的Raw对象以避免在原始数据上直接修改
     raw_processed = raw_gdf.copy()
@@ -242,39 +253,84 @@ def tpasr(transformed_features, raw_gdf):
     return raw_processed
 
 
-def asr_test(filename):
-    raw_gdf, events, events_id = read_raw_gdf(filename)
-    epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
-    transformed_features = pca_TE_PSD(data, raw_gdf)
-    raw_processed = tpasr(transformed_features, raw_gdf)
+def init_asr(raw_gdf):
+    # 使用ASR处理数据，这里不分组，cutoff设置为20
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=25, max_bad_chans=0.2)
+    # 训练ASR
+    asr.fit(raw_gdf)
+    # 应用ASR变换
+    raw_processed = asr.transform(raw_gdf)
 
+    return raw_processed
+
+
+def plot_asr(epochs, cleaned_avg, channel_names):
     # 加载或创建通道位置信息
     montage = mne.channels.make_standard_montage('standard_1020')
-    channel_names = [
-        'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
-        'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
-        'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
-        'P1', 'Pz', 'P2', 'POz'
-    ]
-    # 应用通道位置信息到你的raw数据
-
     # 现在你可以重新尝试绘制，这次应该可以启用空间颜色了
     evoked1 = epochs.average(picks=channel_names)
     evoked1.set_montage(montage)
     # evoked1.plot(spatial_colors=True, titles="Before ASR")
-
-    cleaned_avg = mne.Epochs(raw_processed, events, events_id, 1.5, 6, baseline=None, preload=True, picks=channel_names,
-                             event_repeated='merge')
     cleaned_avg.set_montage(montage)
     evoked2 = cleaned_avg.average()
     # evoked2.plot(spatial_colors=True, titles="After ASR")
-    cleand_data = cleaned_avg.get_data(copy=True)
-    print(f"Epochs(After): {cleand_data.shape}")
-    labels = cleaned_avg.events[:, -1]
     difference_evoked = mne.combine_evoked([evoked1, evoked2], weights=[1, -1])
-
     # 使用plot方法绘制差异波形
     difference_evoked.plot(spatial_colors=True, gfp=True, titles="Difference (Before - After ASR)")
+
+
+def asr_test(filename, training):
+    if training:
+        raw_gdf, events, events_id = read_raw_gdf(filename)
+        events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
+        channel_names = [
+            'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+            'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+            'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+            'P1', 'Pz', 'P2', 'POz'
+        ]
+        epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
+        transformed_features = pca_TE_PSD(data, raw_gdf)
+        raw_processed = tpasr(transformed_features, raw_gdf)
+        raw_processed1 = init_asr(raw_gdf)
+        cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
+                                 picks=channel_names, event_repeated="drop")
+        cleaned_avg1 = mne.Epochs(raw_processed1, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
+                                  picks=channel_names, event_repeated="drop")
+        plot_asr(epochs, cleaned_avg, channel_names)
+        plot_asr(epochs, cleaned_avg1, channel_names)
+        cleand_data = cleaned_avg.get_data(copy=True)
+        # print(f"Epochs(After): {cleand_data.shape}")
+        labels = cleaned_avg.events[:, -1] - 7
+        # print(f"labels(After): {labels}")
+        raw_data_selected_channels = epochs.get_data(copy=True)[:, :22, :]
+        # plt_snr(cleand_data, raw_data_selected_channels)
+        normal_asr = cleaned_avg1.get_data(copy=True)
+        analyze_merits.compare_nmse(cleand_data, raw_data_selected_channels, normal_asr)
+        analyze_merits.compare_snr(cleand_data, raw_data_selected_channels, normal_asr)
+
+    else:
+        raw_gdf, events, events_id = read_raw_gdf(filename)
+        events_id = dict({'1023': 1, '1072': 2, '276': 3, '277': 4, '32766': 5, '768': 6, '783': 7})
+        epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
+        transformed_features = pca_TE_PSD(data, raw_gdf)
+        raw_processed = tpasr(transformed_features, raw_gdf)
+        # 加载或创建通道位置信息
+        montage = mne.channels.make_standard_montage('standard_1020')
+        channel_names = [
+            'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+            'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+            'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+            'P1', 'Pz', 'P2', 'POz'
+        ]
+
+        cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=6., baseline=None, preload=True,
+                                 picks=channel_names,
+                                 event_repeated="merge")
+        cleaned_avg.set_montage(montage)
+        cleand_data = cleaned_avg.get_data(copy=True)
+        labels = cleaned_avg.events[:, -1]
     return cleand_data, labels
 
-# asr_test("./dataset/s8/A08T.gdf")
+
+asr_test("./dataset/s1/A01T.gdf", training=True)
