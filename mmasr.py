@@ -7,7 +7,6 @@ from pyinform import transfer_entropy
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 import analyze_merits
-from sklearn.metrics import mean_squared_error
 
 matplotlib.use('TkAgg')
 
@@ -44,12 +43,12 @@ def read_raw_gdf(filename):
 
     # 获取事件时间位置，返回事件和事件下标
     events, events_id = mne.events_from_annotations(raw_gdf)
-    print('Number of events:', len(events))
-    print(events_id)
-    print(events)
+    # print('Number of events:', len(events))
+    # print(events_id)
+    # print(events)
     # 利用mne.io.RawArray类重新创建Raw对象，已经没有nan数据了
     raw_gdf = mne.io.RawArray(data, raw_gdf.info, verbose="ERROR")
-    print(raw_gdf.info)
+    # print(raw_gdf.info)
     # # 画出EEG通道图
     # raw_gdf.plot()
     # plt.show()
@@ -254,7 +253,7 @@ def tpasr(transformed_features, raw_gdf):
 
 
 def init_asr(raw_gdf):
-    # 使用ASR处理数据，这里不分组，cutoff设置为20
+    # 使用ASR处理数据，这里不分组，cutoff设置为25
     asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=25, max_bad_chans=0.2)
     # 训练ASR
     asr.fit(raw_gdf)
@@ -304,10 +303,12 @@ def asr_test(filename, training):
         labels = cleaned_avg.events[:, -1] - 7
         # print(f"labels(After): {labels}")
         raw_data_selected_channels = epochs.get_data(copy=True)[:, :22, :]
+        raw_data_eog_channels = epochs.get_data(copy=True)[:, -3:, :]
         # plt_snr(cleand_data, raw_data_selected_channels)
         normal_asr = cleaned_avg1.get_data(copy=True)
         analyze_merits.compare_nmse(cleand_data, raw_data_selected_channels, normal_asr)
-        analyze_merits.compare_snr(cleand_data, raw_data_selected_channels, normal_asr)
+        analyze_merits.compare_rmse(cleand_data, raw_data_selected_channels, normal_asr)
+        analyze_merits.compare_snr(cleand_data, raw_data_selected_channels, raw_data_eog_channels, normal_asr)
 
     else:
         raw_gdf, events, events_id = read_raw_gdf(filename)
@@ -333,4 +334,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("./dataset/s1/A01T.gdf", training=True)
+asr_test("./dataset/s3/A03T.gdf", training=True)
