@@ -4,6 +4,86 @@ import numpy as np
 
 matplotlib.use('TkAgg')
 
+from sklearn.metrics import mutual_info_score
+
+
+def discretize_signal(signal, bins='auto'):
+    """
+    Discretize a continuous signal into bins.
+
+    Parameters:
+    - signal: NumPy array representing the continuous signal.
+    - bins: The strategy to compute the bins, 'auto' will use the
+            Freedman–Diaconis rule to estimate the bin size.
+
+    Returns:
+    - discretized_signal: Discretized version of the signal.
+    """
+    _, bin_edges = np.histogram(signal, bins=bins)
+    discretized_signal = np.digitize(signal, bins=bin_edges)
+    return discretized_signal
+
+
+def compare_mi(cleaned_data, raw_data_selected_channels, normal_asr):
+    """
+    Calculate and compare the Mutual Information (MI) between cleaned EEG data and normal ASR data.
+
+    Parameters:
+    - cleaned_data: Cleaned EEG data.
+    - raw_data_selected_channels: Raw EEG data from selected channels.
+    - normal_asr: Normal EEG data after applying Artifact Subspace Reconstruction (ASR) or another cleaning method.
+
+    Note: Assumes data are NumPy arrays with shape (epochs, channels, time_points)
+    """
+    n_epochs, n_channels, _ = cleaned_data.shape
+
+    # Initialize an array to store MI values
+    mi_values = np.zeros((n_channels, 2))  # Two columns for the two comparisons
+
+    for i in range(n_channels):
+        # Discretize the signals
+        disc_cleaned = discretize_signal(cleaned_data[:, i, :].flatten())
+        disc_raw = discretize_signal(raw_data_selected_channels[:, i, :].flatten())
+        disc_normal_asr = discretize_signal(normal_asr[:, i, :].flatten())
+
+        # Calculate MI between cleaned and raw, and cleaned and normal ASR
+        mi_values[i, 0] = mutual_info_score(disc_normal_asr, disc_raw)
+        mi_values[i, 1] = mutual_info_score(disc_cleaned, disc_raw)
+
+    # Plotting the comparison using a boxplot
+    fig, ax = plt.subplots(figsize=(12, 4))
+    bplot = ax.boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True,
+                       positions=[1, 2], widths=0.2)
+
+    # Set box colors and other properties
+    colors = ['#AED6F1', '#F9E79F']
+    for patch, color in zip(bplot['boxes'], colors):
+        patch.set_facecolor(color)  # Box fill color
+        patch.set_edgecolor('black')  # Box edge color
+
+    # Calculate mean MI for each comparison
+    mean_mi_clean_raw = np.mean(mi_values[:, 0])
+    mean_mi_clean_asr = np.mean(mi_values[:, 1])
+
+    # Set title and axis labels
+    ax.set_title('Mutual Information (MI) Comparison', fontsize=18)
+    ax.set_ylabel('MI Value', fontsize=14)
+    ax.set_xticks([1, 2])
+    ax.set_xticklabels(['ASR', 'MASR'], fontsize=12)
+
+    # Show grid lines
+    ax.grid(True, linestyle='--', alpha=0.7)
+
+    # Add legend
+    legend_labels = [f'ASR (Mean MI: {mean_mi_clean_raw:.2f})',
+                     f'MASR (Mean MI: {mean_mi_clean_asr:.2f})']
+    ax.legend(handles=[plt.Rectangle((0, 0), 0.5, 2, color=color) for color in colors],
+              labels=legend_labels, loc='best', framealpha=1)
+
+    # Display the plot
+    plt.tight_layout()
+    plt.show()
+
 
 def calculate_power(data, sfreq, fmin=None, fmax=None):
     """
@@ -56,6 +136,7 @@ def calculate_nmse(data1, data2):
     nmse_per_channel = np.mean((data1 - data2) ** 2, axis=(0, 2)) / (np.mean(data2 ** 2, axis=(0, 2)) + epsilon)
     return nmse_per_channel
 
+
 def calculate_rmse(data1, data2):
     """
     计算两个数据集之间的均方根误差（RMSE）。
@@ -70,6 +151,7 @@ def calculate_rmse(data1, data2):
     """
     rmse_per_channel = np.sqrt(np.mean((data1 - data2) ** 2, axis=(0, 2)))
     return rmse_per_channel
+
 
 def compare_nmse(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250, fmin=0.5, fmax=50):
     """
@@ -112,13 +194,13 @@ def compare_nmse(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250,
     ax.set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=18)
     ax.set_ylabel('NMSE', fontsize=14)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(['Normal ASR', 'MASR'], fontsize=12)
+    ax.set_xticklabels(['ASR', 'MASR'], fontsize=12)
 
     # 显示网格线
     ax.grid(True, linestyle='--', alpha=0.7)
 
     # 添加图例说明
-    legend_labels = [f'Normal ASR (Mean: {mean_nmse_normal_asr:.3})', f'MASR (Mean: {mean_nmse_clean:.3})']
+    legend_labels = [f'ASR (Mean: {mean_nmse_normal_asr:.3})', f'MASR (Mean: {mean_nmse_clean:.3})']
     ax.legend(handles=[plt.Rectangle((0, 0), 0.5, 2, color=color) for color in colors], labels=legend_labels,
               framealpha=1, loc='best')
 
@@ -166,18 +248,19 @@ def compare_rmse(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250,
     ax.set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=18)
     ax.set_ylabel('RMSE', fontsize=14)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(['Normal ASR', 'MASR'], fontsize=12)
+    ax.set_xticklabels(['ASR', 'MASR'], fontsize=12)
 
     # Show grid lines
     ax.grid(True, linestyle='--', alpha=0.7)
 
     # Add legend
-    legend_labels = [f'Normal ASR (Mean: {mean_rmse_normal_asr:.3})', f'MASR (Mean: {mean_rmse_clean:.3})']
+    legend_labels = [f'ASR (Mean: {mean_rmse_normal_asr:.3})', f'MASR (Mean: {mean_rmse_clean:.3})']
     ax.legend(handles=[plt.Rectangle((0, 0), 0.5, 2, color=color) for color in colors], labels=legend_labels,
               framealpha=1, loc='best')
 
     # Display the plot
     plt.show()
+
 
 def compare_snr(cleand_data, raw_data_selected_channels, raw_data_eog_channels, normal_asr, sfreq=250, fmin=0.5,
                 fmax=50):
@@ -229,13 +312,13 @@ def compare_snr(cleand_data, raw_data_selected_channels, raw_data_eog_channels, 
     ax.set_title('Signal to Noise Ratio (SNR) Comparison', fontsize=18)
     ax.set_ylabel('SNR (dB)', fontsize=14)
     ax.set_xticks([1, 2])
-    ax.set_xticklabels(['Normal ASR', 'MASR'], fontsize=12)
+    ax.set_xticklabels(['ASR', 'MASR'], fontsize=12)
 
     # 显示网格线
     ax.grid(True, linestyle='--', alpha=0.7)
 
     # 添加图例说明
-    legend_labels = [f'Normal ASR (Mean: {mean_snr_normal_asr:.2f} dB)', f'MASR (Mean: {mean_snr_asr:.2f} dB)']
+    legend_labels = [f'ASR (Mean: {mean_snr_normal_asr:.2f} dB)', f'MASR (Mean: {mean_snr_asr:.2f} dB)']
     ax.legend(handles=[plt.Rectangle((0, 0), 0.5, 2, color=color) for color in colors], labels=legend_labels,
               framealpha=1, loc='best')
 

@@ -1,4 +1,5 @@
 import matplotlib
+import pywt
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
@@ -7,6 +8,8 @@ from pyinform import transfer_entropy
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 import analyze_merits
+import mstse
+import tse
 
 matplotlib.use('TkAgg')
 
@@ -15,6 +18,11 @@ def bin_data(data, bins):
     hist, bin_edges = np.histogram(data, bins=bins)
     binned_data = np.digitize(data, bin_edges[:-1]) - 1  # subtract 1 to start binning from 0
     return binned_data
+
+
+def wpd(data, max_level):
+    wp = pywt.WaveletPacket(data=data, wavelet='db1', mode='symmetric', maxlevel=max_level)
+    return wp
 
 
 def read_raw_gdf(filename):
@@ -79,13 +87,13 @@ def get_epochs(raw_gdf, events, events_id):
 
 
 def pca_TE_PSD(data, raw_gdf):
-    desired_length = 255602
-    num_bins = 100
-    embedding_data_list_2D_trimmed = [data[:desired_length, 0] for data in data]
-    # print(f" embedding_data_list_2D_trimmed: {embedding_data_list_2D_trimmed}")
-    embedding_data_list_2D_binned = [bin_data(data, num_bins) for data in embedding_data_list_2D_trimmed]
-    # print(f" embedding_data_list_2D_binned: {embedding_data_list_2D_binned}")
-
+    # desired_length = 255602
+    # num_bins = 200
+    # embedding_data_list_2D_trimmed = [data[:desired_length, 0] for data in data]
+    # # print(f" embedding_data_list_2D_trimmed: {embedding_data_list_2D_trimmed}")
+    # embedding_data_list_2D_binned = [bin_data(data, num_bins) for data in embedding_data_list_2D_trimmed]
+    # # print(f" embedding_data_list_2D_binned: {embedding_data_list_2D_binned}")
+    tsedata = np.mean(data, axis=0)
     # channels = raw_gdf.ch_names
     channels = [
         'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
@@ -97,30 +105,42 @@ def pca_TE_PSD(data, raw_gdf):
 
     # Compute Transfer Entropy for all channel pairs
     num_channels = 25
-    TE_matrix = np.zeros((num_channels, num_channels))
+    mstse_matrix = np.zeros((num_channels, num_channels))
 
     for i, source_channel in enumerate(channels[:num_channels]):
         for j, target_channel in enumerate(channels[:num_channels]):
             if i != j:  # 避免计算通道自身的转递熵
                 try:
                     # 假设 transfer_entropy 函数返回的是从 source_channel 到 target_channel 的转递熵值
-                    te_value = transfer_entropy(embedding_data_list_2D_binned[i], embedding_data_list_2D_binned[j], k=1)
+                    # mstse_value = mstse.mstse(embedding_data_list_2D_binned[i],
+                    #                           embedding_data_list_2D_binned[j], K=5, fs=250)
+                    # mstse_value = transfer_entropy(embedding_data_list_2D_binned[i],
+                    #                                embedding_data_list_2D_binned[j], k=1)
+                    embedding_dim = 36
+                    tau = 1
+                    phi = 5
+                    fl1 = 0  # 频带起始索引
+                    fl2 = 50  # 频带结束索引，需根据实际频率点调整
+                    mstse_value = tse.calculate_transfer_spectral_entropy(tsedata[i],
+                                                                          tsedata[j],
+                                                                          embedding_dim, tau, fl1, fl2, phi)
+
                     # 存储转递熵值到矩阵中
-                    TE_matrix[i, j] = te_value
+                    mstse_matrix[i, j] = mstse_value
                 except Exception as e:
-                    print(f"Error computing Transfer Entropy from {source_channel} to {target_channel}: {e}")
+                    print(f"Error computing Transfer Spectral Entropy from {source_channel} to {target_channel}: {e}")
 
     # 使用热图表示转递熵矩阵
-    # plt.figure(figsize=(12, 10))
-    # plt.imshow(TE_matrix, cmap='viridis', aspect='auto')
-    # plt.colorbar(label='Transfer Entropy')
-    # plt.title('Transfer Entropy Matrix')
-    # plt.xlabel('Target Channel')
-    # plt.ylabel('Source Channel')
-    # plt.xticks(range(num_channels), labels=channels[:num_channels], rotation=90)
-    # plt.yticks(range(num_channels), labels=channels[:num_channels])
-    # plt.tight_layout()
-    # plt.show()
+    plt.figure(figsize=(12, 10))
+    plt.imshow(mstse_matrix, cmap='viridis', aspect='auto')
+    plt.colorbar(label='Transfer Spectral Entropy')
+    plt.title('Transfer Spectral Entropy Matrix')
+    plt.xlabel('Target Channel')
+    plt.ylabel('Source Channel')
+    plt.xticks(range(num_channels), labels=channels[:num_channels], rotation=90)
+    plt.yticks(range(num_channels), labels=channels[:num_channels])
+    plt.tight_layout()
+    plt.show()
     # 假设 epochs 是已经预加载的mne.Epochs对象
     # 设置感兴趣的频率范围
     fmin, fmax = 0.5, 50  # Hz
@@ -168,13 +188,53 @@ def pca_TE_PSD(data, raw_gdf):
     # plt.yticks(range(num_channels), raw_gdf.ch_names[:num_channels])
     # plt.show()
     # 提取对22个EEG通道有影响的3个EOG通道的相关特征
-    features_TE_EOG = TE_matrix[:22, -3:]  # 最后3列代表TE值
-    features_PSD_EOG = psd_similarities[:22, -3:]  # 最后3列代表PSD相似度
+
+    max_level = 3  # 设置小波包分解的最大层数
+    wpd_similarities = np.zeros((num_channels, num_channels))
+    for i in range(num_channels):
+        for j in range(i + 1, num_channels):
+            wpd_i = wpd(data[:, i], max_level)
+            wpd_j = wpd(data[:, j], max_level)
+            # 假设我们只对特定的节点感兴趣，例如：第三层的所有节点
+            nodes_i = [node.path for node in wpd_i.get_level(max_level, 'freq')]
+            nodes_j = [node.path for node in wpd_j.get_level(max_level, 'freq')]
+            # 计算这些节点的特征相似度
+            sim_values = []
+            for path in nodes_i:
+                if path in nodes_j:  # 确保两个通道都有该节点
+                    # Assuming that wpd_i[path].data and wpd_j[path].data are 2D with shape (observations, features)
+                    num_features = wpd_i[path].data.shape[1]
+                    correlations = np.zeros(num_features)
+                    for feature_idx in range(num_features):
+                        feature_data_i = wpd_i[path].data[:, feature_idx]
+                        feature_data_j = wpd_j[path].data[:, feature_idx]
+                        correlations[feature_idx], _ = pearsonr(feature_data_i, feature_data_j)
+
+                    # Now you have the correlation for each feature between the two channels
+                    sim = np.mean(correlations)  # If you want the average correlation across all features
+
+                    sim_values.append(sim)
+            # 用平均相似度作为通道i和j之间的WPD相似度
+            wpd_similarities[i, j] = np.mean(sim_values)
+            wpd_similarities[j, i] = wpd_similarities[i, j]  # 保持矩阵对称性
+    # # 可视化WPD相似度矩阵
+    plt.figure(figsize=(10, 10))
+    plt.imshow(wpd_similarities, interpolation='nearest', cmap='viridis')
+    plt.colorbar()
+    plt.title('WPD')
+    plt.xlabel('ch_names')
+    plt.ylabel('ch_names')
+    plt.xticks(range(num_channels), raw_gdf.ch_names[:num_channels], rotation=90)
+    plt.yticks(range(num_channels), raw_gdf.ch_names[:num_channels])
+    plt.show()
+    features_TE_EOG = mstse_matrix[:22, -3:]
+    features_PSD_EOG = psd_similarities[:22, -3:]
+    features_WPD_EOG = wpd_similarities[:22, -3:]
 
     # 将特征扁平化，为每个EEG通道形成一个特征向量
-    features = np.hstack((features_TE_EOG, features_PSD_EOG))
+    features = np.hstack((features_TE_EOG, features_PSD_EOG, features_WPD_EOG))
 
-    # 应用PCA进行降维，以便于可视化
+    # 应用PCA进行降维
     pca = PCA(n_components=1)
     transformed_features = pca.fit_transform(features)
 
@@ -186,14 +246,14 @@ def pca_TE_PSD(data, raw_gdf):
         'P1', 'Pz', 'P2', 'POz'
     ]
 
-    # plt.figure(figsize=(12, 8))
-    # plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
-    # plt.xlabel('EEG Channel')
-    # plt.ylabel('PCA Transformed Feature Value')
-    # plt.title('Influence of EOG on EEG Channels via PCA')
-    # plt.xticks(range(1, 23), labels=channel_names, rotation=45)
-    # plt.tight_layout()
-    # plt.show()
+    plt.figure(figsize=(12, 8))
+    plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
+    plt.xlabel('EEG Channel')
+    plt.ylabel('PCA Transformed Feature Value')
+    plt.title('Influence of EOG on EEG Channels via PCA')
+    plt.xticks(range(1, 23), labels=channel_names, rotation=45)
+    plt.tight_layout()
+    plt.show()
     return transformed_features
 
 
@@ -309,6 +369,7 @@ def asr_test(filename, training):
         analyze_merits.compare_nmse(cleand_data, raw_data_selected_channels, normal_asr)
         analyze_merits.compare_rmse(cleand_data, raw_data_selected_channels, normal_asr)
         analyze_merits.compare_snr(cleand_data, raw_data_selected_channels, raw_data_eog_channels, normal_asr)
+        analyze_merits.compare_mi(cleand_data, raw_data_selected_channels, normal_asr)
 
     else:
         raw_gdf, events, events_id = read_raw_gdf(filename)
@@ -334,4 +395,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("./dataset/s3/A03T.gdf", training=True)
+asr_test("./dataset/s5/A05T.gdf", training=True)
