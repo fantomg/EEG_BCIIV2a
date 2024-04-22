@@ -4,20 +4,12 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 from asrpy import ASR
-from pyinform import transfer_entropy
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 import analyze_merits
-import mstse
 import tse
 
 matplotlib.use('TkAgg')
-
-
-def bin_data(data, bins):
-    hist, bin_edges = np.histogram(data, bins=bins)
-    binned_data = np.digitize(data, bin_edges[:-1]) - 1  # subtract 1 to start binning from 0
-    return binned_data
 
 
 def wpd(data, max_level):
@@ -86,13 +78,23 @@ def get_epochs(raw_gdf, events, events_id):
     return epochs, events_id, data
 
 
-def pca_TE_PSD(data, raw_gdf):
-    # desired_length = 255602
-    # num_bins = 200
-    # embedding_data_list_2D_trimmed = [data[:desired_length, 0] for data in data]
-    # # print(f" embedding_data_list_2D_trimmed: {embedding_data_list_2D_trimmed}")
-    # embedding_data_list_2D_binned = [bin_data(data, num_bins) for data in embedding_data_list_2D_trimmed]
-    # # print(f" embedding_data_list_2D_binned: {embedding_data_list_2D_binned}")
+def plot_heatmap(matrix, lable, title, num_channels, ch_names):
+    """
+    绘制热图的通用函数
+    """
+    plt.figure(figsize=(12, 10))
+    plt.imshow(matrix, interpolation='nearest', cmap='viridis', aspect='auto')
+    plt.colorbar(label=lable)
+    plt.title(title)
+    plt.xlabel('Target Channel')
+    plt.ylabel('Source Channel')
+    plt.xticks(range(num_channels), ch_names[:num_channels], rotation=90)
+    plt.yticks(range(num_channels), ch_names[:num_channels])
+    plt.tight_layout()
+    plt.show()
+
+
+def pca_TPW(data):
     tsedata = np.mean(data, axis=0)
     # channels = raw_gdf.ch_names
     channels = [
@@ -111,41 +113,24 @@ def pca_TE_PSD(data, raw_gdf):
         for j, target_channel in enumerate(channels[:num_channels]):
             if i != j:  # 避免计算通道自身的转递熵
                 try:
-                    # 假设 transfer_entropy 函数返回的是从 source_channel 到 target_channel 的转递熵值
-                    # mstse_value = mstse.mstse(embedding_data_list_2D_binned[i],
-                    #                           embedding_data_list_2D_binned[j], K=5, fs=250)
-                    # mstse_value = transfer_entropy(embedding_data_list_2D_binned[i],
-                    #                                embedding_data_list_2D_binned[j], k=1)
                     embedding_dim = 36
                     tau = 1
                     phi = 5
                     fl1 = 0  # 频带起始索引
-                    fl2 = 50  # 频带结束索引，需根据实际频率点调整
+                    fl2 = 125  # 频带结束索引，需根据实际频率点调整
                     mstse_value = tse.calculate_transfer_spectral_entropy(tsedata[i],
                                                                           tsedata[j],
                                                                           embedding_dim, tau, fl1, fl2, phi)
-
                     # 存储转递熵值到矩阵中
                     mstse_matrix[i, j] = mstse_value
                 except Exception as e:
                     print(f"Error computing Transfer Spectral Entropy from {source_channel} to {target_channel}: {e}")
-
-    # 使用热图表示转递熵矩阵
-    plt.figure(figsize=(12, 10))
-    plt.imshow(mstse_matrix, cmap='viridis', aspect='auto')
-    plt.colorbar(label='Transfer Spectral Entropy')
-    plt.title('Transfer Spectral Entropy Matrix')
-    plt.xlabel('Target Channel')
-    plt.ylabel('Source Channel')
-    plt.xticks(range(num_channels), labels=channels[:num_channels], rotation=90)
-    plt.yticks(range(num_channels), labels=channels[:num_channels])
-    plt.tight_layout()
-    plt.show()
+    plot_heatmap(mstse_matrix, 'Transfer Spectral Entropy', 'Transfer Spectral Entropy Matrix', num_channels, channels)
+    # 使用热图表示转递谱熵矩阵
     # 假设 epochs 是已经预加载的mne.Epochs对象
     # 设置感兴趣的频率范围
     fmin, fmax = 0.5, 50  # Hz
-    tmin, tmax = 1.5, 6.  # 选择Cue后 1s - 4s 的数据
-    n_fft = 1024  # FFT的窗口大小，减小以匹配数据长度
+    n_fft = 1125  # FFT的窗口大小，减小以匹配数据长度
     n_per_seg = 512  # 每个段的长度，确保小于epoch的时间点数
 
     # 我们需要手动提取每个通道的数据
@@ -176,18 +161,8 @@ def pca_TE_PSD(data, raw_gdf):
             corr_coef, _ = pearsonr(psds_dict[channel_i], psds_dict[channel_j])
             psd_similarities[i, j] = corr_coef
             psd_similarities[j, i] = corr_coef  # 使矩阵对称
-
+    plot_heatmap(psd_similarities, 'PSD Similarities', 'PSD Matrix', num_channels, channels)
     # # 可视化PSD相似度矩阵
-    # plt.figure(figsize=(10, 10))
-    # plt.imshow(psd_similarities, interpolation='nearest', cmap='viridis')
-    # plt.colorbar()
-    # plt.title('PSD')
-    # plt.xlabel('ch_names')
-    # plt.ylabel('ch_names')
-    # plt.xticks(range(num_channels), raw_gdf.ch_names[:num_channels], rotation=90)
-    # plt.yticks(range(num_channels), raw_gdf.ch_names[:num_channels])
-    # plt.show()
-    # 提取对22个EEG通道有影响的3个EOG通道的相关特征
 
     max_level = 3  # 设置小波包分解的最大层数
     wpd_similarities = np.zeros((num_channels, num_channels))
@@ -217,16 +192,9 @@ def pca_TE_PSD(data, raw_gdf):
             # 用平均相似度作为通道i和j之间的WPD相似度
             wpd_similarities[i, j] = np.mean(sim_values)
             wpd_similarities[j, i] = wpd_similarities[i, j]  # 保持矩阵对称性
-    # # 可视化WPD相似度矩阵
-    plt.figure(figsize=(10, 10))
-    plt.imshow(wpd_similarities, interpolation='nearest', cmap='viridis')
-    plt.colorbar()
-    plt.title('WPD')
-    plt.xlabel('ch_names')
-    plt.ylabel('ch_names')
-    plt.xticks(range(num_channels), raw_gdf.ch_names[:num_channels], rotation=90)
-    plt.yticks(range(num_channels), raw_gdf.ch_names[:num_channels])
-    plt.show()
+    # 可视化WPD相似度矩阵
+    plot_heatmap(wpd_similarities, 'WPD Similarities', 'WPD Matrix', num_channels, channels)
+    # 提取对22个EEG通道有影响的3个EOG通道的相关特征
     features_TE_EOG = mstse_matrix[:22, -3:]
     features_PSD_EOG = psd_similarities[:22, -3:]
     features_WPD_EOG = wpd_similarities[:22, -3:]
@@ -263,8 +231,8 @@ def tpasr(transformed_features, raw_gdf):
     sorted_features = np.sort(transformed_features)
 
     # Calculate low_threshold and high_threshold based on the values at one-third and two-thirds positions
-    one_third_index = len(sorted_features) // 3
-    two_thirds_index = 2 * len(sorted_features) // 3
+    one_third_index = len(sorted_features) // 4
+    two_thirds_index = 3 * len(sorted_features) // 4
 
     # 假设 sorted_features 是一个排序后的一维数组
     low_threshold = round(float(sorted_features[one_third_index]), 3) if np.isscalar(
@@ -290,8 +258,8 @@ def tpasr(transformed_features, raw_gdf):
     print(medium_impact_channels)
     print(high_impact_channels)
     # 定义每组的ASR参数
-    asr_params_low = {'cutoff': 20, 'max_bad_chans': 0.3}
-    asr_params_medium = {'cutoff': 25, 'max_bad_chans': 0.2}
+    asr_params_low = {'cutoff': 10, 'max_bad_chans': 0.3}
+    asr_params_medium = {'cutoff': 20, 'max_bad_chans': 0.2}
     asr_params_high = {'cutoff': 30, 'max_bad_chans': 0.1}
 
     # 创建一个新的Raw对象以避免在原始数据上直接修改
@@ -314,7 +282,7 @@ def tpasr(transformed_features, raw_gdf):
 
 def init_asr(raw_gdf):
     # 使用ASR处理数据，这里不分组，cutoff设置为25
-    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=25, max_bad_chans=0.2)
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.2)
     # 训练ASR
     asr.fit(raw_gdf)
     # 应用ASR变换
@@ -349,7 +317,7 @@ def asr_test(filename, training):
             'P1', 'Pz', 'P2', 'POz'
         ]
         epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
-        transformed_features = pca_TE_PSD(data, raw_gdf)
+        transformed_features = pca_TPW(data)
         raw_processed = tpasr(transformed_features, raw_gdf)
         raw_processed1 = init_asr(raw_gdf)
         cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
@@ -375,7 +343,7 @@ def asr_test(filename, training):
         raw_gdf, events, events_id = read_raw_gdf(filename)
         events_id = dict({'1023': 1, '1072': 2, '276': 3, '277': 4, '32766': 5, '768': 6, '783': 7})
         epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
-        transformed_features = pca_TE_PSD(data, raw_gdf)
+        transformed_features = pca_TPW(data)
         raw_processed = tpasr(transformed_features, raw_gdf)
         # 加载或创建通道位置信息
         montage = mne.channels.make_standard_montage('standard_1020')
@@ -386,7 +354,7 @@ def asr_test(filename, training):
             'P1', 'Pz', 'P2', 'POz'
         ]
 
-        cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=6., baseline=None, preload=True,
+        cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
                                  picks=channel_names,
                                  event_repeated="merge")
         cleaned_avg.set_montage(montage)
@@ -395,4 +363,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("./dataset/s5/A05T.gdf", training=True)
+asr_test("dataset/s8/A08T.gdf", training=True)
