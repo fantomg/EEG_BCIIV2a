@@ -4,10 +4,14 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 from asrpy import ASR
+from matplotlib import cm
+from matplotlib.colors import Normalize
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 import analyze_merits
 import tse
+import time
+from scipy.cluster.hierarchy import dendrogram, linkage
 
 matplotlib.use('TkAgg')
 
@@ -59,7 +63,8 @@ def get_epochs(raw_gdf, events, events_id):
     # 选择范围为Cue后 1s - 4s 的数据
     tmin, tmax = 1.5, 5.995
     # 四类 MI 对应的 events_id
-    events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
+    events_id = dict({'769': 7, '770': 8})
+    # events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
 
     epochs = mne.Epochs(raw_gdf, events, events_id, tmin, tmax, proj=True, baseline=None, preload=True,
                         event_repeated='drop')
@@ -82,7 +87,7 @@ def plot_heatmap(matrix, lable, title, num_channels, ch_names):
     """
     绘制热图的通用函数
     """
-    plt.figure(figsize=(12, 10))
+    plt.figure(figsize=(10, 10))
     plt.imshow(matrix, interpolation='nearest', cmap='viridis', aspect='auto')
     plt.colorbar(label=lable)
     plt.title(title)
@@ -94,8 +99,35 @@ def plot_heatmap(matrix, lable, title, num_channels, ch_names):
     plt.show()
 
 
+def wpd_plt(signal, n):
+    # wpd分解
+    wp = pywt.WaveletPacket(data=signal, wavelet='db1', mode='symmetric', maxlevel=n)
+
+    # 计算每一个节点的系数，存在map中，key为'aa'等，value为列表
+    map = {}
+    map[1] = signal
+    for row in range(1, n + 1):
+        lev = []
+        for i in [node.path for node in wp.get_level(row, 'freq')]:
+            map[i] = wp[i].data
+
+    # 作图
+    plt.figure(figsize=(15, 10))
+    plt.subplot(n + 1, 1, 1)  # 绘制第一个图
+    plt.plot(map[1])
+    for i in range(2, n + 2):
+        level_num = pow(2, i - 1)  # 从第二行图开始，计算上一行图的2的幂次方
+        # 获取每一层分解的node：比如第三层['aaa', 'aad', 'add', 'ada', 'dda', 'ddd', 'dad', 'daa']
+        re = [node.path for node in wp.get_level(i - 1, 'freq')]
+        for j in range(1, level_num + 1):
+            plt.subplot(n + 1, level_num, level_num * (i - 1) + j)
+            plt.plot(map[re[j - 1]])  # 列表从0开始
+
+
 def pca_TPW(data):
     tsedata = np.mean(data, axis=0)
+    num_rows = 22
+    num_cols = 3
     # channels = raw_gdf.ch_names
     channels = [
         'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
@@ -107,29 +139,28 @@ def pca_TPW(data):
 
     # Compute Transfer Entropy for all channel pairs
     num_channels = 25
-    mstse_matrix = np.zeros((num_channels, num_channels))
+    tse_matrix = np.zeros((num_channels, num_channels))
 
-    for i, source_channel in enumerate(channels[:num_channels]):
-        for j, target_channel in enumerate(channels[:num_channels]):
+    for i, source_channel in enumerate(channels[:num_rows]):
+        for j, target_channel in enumerate(channels[-num_cols:]):
             if i != j:  # 避免计算通道自身的转递熵
                 try:
-                    embedding_dim = 36
+                    embedding_dim = 6
                     tau = 1
-                    phi = 5
                     fl1 = 0  # 频带起始索引
-                    fl2 = 125  # 频带结束索引，需根据实际频率点调整
-                    mstse_value = tse.calculate_transfer_spectral_entropy(tsedata[i],
-                                                                          tsedata[j],
-                                                                          embedding_dim, tau, fl1, fl2, phi)
+                    fl2 = 100  # 频带结束索引，需根据实际频率点调整
+                    tse_value = tse.calculate_transfer_spectral_entropy(tsedata[i],
+                                                                        tsedata[j],
+                                                                        embedding_dim, tau, fl1, fl2)
                     # 存储转递熵值到矩阵中
-                    mstse_matrix[i, j] = mstse_value
+                    tse_matrix[i, j] = tse_value
                 except Exception as e:
                     print(f"Error computing Transfer Spectral Entropy from {source_channel} to {target_channel}: {e}")
-    plot_heatmap(mstse_matrix, 'Transfer Spectral Entropy', 'Transfer Spectral Entropy Matrix', num_channels, channels)
+    # plot_heatmap(tse_matrix, 'Transfer Spectral Entropy', 'Transfer Spectral Entropy Matrix', num_channels, channels)
     # 使用热图表示转递谱熵矩阵
     # 假设 epochs 是已经预加载的mne.Epochs对象
     # 设置感兴趣的频率范围
-    fmin, fmax = 0.5, 50  # Hz
+    fmin, fmax = 0.5, 100  # Hz
     n_fft = 1125  # FFT的窗口大小，减小以匹配数据长度
     n_per_seg = 512  # 每个段的长度，确保小于epoch的时间点数
 
@@ -153,22 +184,23 @@ def pca_TPW(data):
         psds_dict[ch_name] = psd.mean(axis=0)
 
     # 计算所有通道对之间的PSD相似度
-    for i in range(num_channels):
+    for i in range(num_rows):
         channel_i = channels[i]
-        for j in range(i + 1, num_channels):  # 使用i+1开始，避免重复计算和自我比较
+        for j in range(num_channels - num_cols, num_channels):  # 使用i+1开始，避免重复计算和自我比较
             channel_j = channels[j]
             # 计算两个通道之间PSD的相似度
             corr_coef, _ = pearsonr(psds_dict[channel_i], psds_dict[channel_j])
             psd_similarities[i, j] = corr_coef
             psd_similarities[j, i] = corr_coef  # 使矩阵对称
-    plot_heatmap(psd_similarities, 'PSD Similarities', 'PSD Matrix', num_channels, channels)
+    # plot_heatmap(psd_similarities, 'PSD Similarities', 'PSD Matrix', num_channels, channels)
     # # 可视化PSD相似度矩阵
-
     max_level = 3  # 设置小波包分解的最大层数
+    # wpd_plt(tsedata[:, 1], max_level)
     wpd_similarities = np.zeros((num_channels, num_channels))
-    for i in range(num_channels):
-        for j in range(i + 1, num_channels):
+    for i in range(num_rows):
+        for j in range(num_channels - num_cols, num_channels):
             wpd_i = wpd(data[:, i], max_level)
+
             wpd_j = wpd(data[:, j], max_level)
             # 假设我们只对特定的节点感兴趣，例如：第三层的所有节点
             nodes_i = [node.path for node in wpd_i.get_level(max_level, 'freq')]
@@ -192,36 +224,92 @@ def pca_TPW(data):
             # 用平均相似度作为通道i和j之间的WPD相似度
             wpd_similarities[i, j] = np.mean(sim_values)
             wpd_similarities[j, i] = wpd_similarities[i, j]  # 保持矩阵对称性
+
     # 可视化WPD相似度矩阵
-    plot_heatmap(wpd_similarities, 'WPD Similarities', 'WPD Matrix', num_channels, channels)
+    # plot_heatmap(wpd_similarities, 'WPD Similarities', 'WPD Matrix', num_channels, channels)
     # 提取对22个EEG通道有影响的3个EOG通道的相关特征
-    features_TE_EOG = mstse_matrix[:22, -3:]
+    features_TSE_EOG = tse_matrix[:22, -3:]
     features_PSD_EOG = psd_similarities[:22, -3:]
     features_WPD_EOG = wpd_similarities[:22, -3:]
 
     # 将特征扁平化，为每个EEG通道形成一个特征向量
-    features = np.hstack((features_TE_EOG, features_PSD_EOG, features_WPD_EOG))
+    features = np.hstack((features_TSE_EOG, features_PSD_EOG, features_WPD_EOG))
 
     # 应用PCA进行降维
     pca = PCA(n_components=1)
     transformed_features = pca.fit_transform(features)
+    print(transformed_features)
+    # 计算需要平移的量，使所有值为正
+    shift_amount = np.abs(transformed_features.min()) + 0.1  # 增加0.1来确保所有值都为正
 
-    # 可视化
-    channel_names = [
-        'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
-        'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
-        'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
-        'P1', 'Pz', 'P2', 'POz'
+    # 对所有值进行平移
+    A_shifted = transformed_features + shift_amount
+    channels = ['Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+                'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+                'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+                'P1', 'Pz', 'P2', 'POz']
+    # 根据脑电通道分布确定柱体的位置
+    positions = [
+        (2.5, 5),
+        (3.5, 4), (2.5, 4), (1.5, 4), (0.5, 4), (-0.5, 4),
+        (4.5, 3), (3.5, 3), (2.5, 3), (1.5, 3), (0.5, 3), (-0.5, 3), (-1.5, 3),
+        (3.5, 2), (2.5, 2), (1.5, 2), (0.5, 2), (-0.5, 2),
+        (2.5, 1), (1.5, 1), (0.5, 1),
+        (2.5, 0)
     ]
 
-    plt.figure(figsize=(12, 8))
-    plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
-    plt.xlabel('EEG Channel')
-    plt.ylabel('PCA Transformed Feature Value')
-    plt.title('Influence of EOG on EEG Channels via PCA')
-    plt.xticks(range(1, 23), labels=channel_names, rotation=45)
-    plt.tight_layout()
+    xpos = np.array([p[0] for p in positions])
+    ypos = np.array([p[1] for p in positions])
+    zpos = np.zeros(len(xpos))
+
+    dx = dy = 0.5 * np.ones(len(xpos))
+    dz = A_shifted
+
+    # 创建画布和坐标轴
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    # 设置颜色映射
+    colors = cm.plasma_r(np.linspace(0, 1, len(A_shifted)))  # 这里的 len(A) 应该是通道的数量，即22
+
+    # 绘制三维柱状图
+    for i in range(len(A_shifted)):
+        ax.bar3d(xpos[i], ypos[i], zpos[i], dx[i], dy[i], dz[i], color=colors[i])
+    # 在柱体上方显示通道名称
+
+    # 移除背景
+    ax.patch.set_alpha(0)
+
+    # 移除坐标轴
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    # 创建一个假的二维图以显示colorbar
+    x = np.linspace(0, 1, len(A_shifted))
+    y = np.ones(len(A_shifted))
+    c = np.linspace(0, 1, len(A_shifted))
+
+    plt.figure()
+    sc = plt.scatter(x, y, c=c, cmap='plasma')
+    plt.colorbar(sc)
+
     plt.show()
+    # # 可视化
+    # channel_names = [
+    #     'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+    #     'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+    #     'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+    #     'P1', 'Pz', 'P2', 'POz'
+    # ]
+    #
+    # plt.figure(figsize=(12, 8))
+    # plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
+    # plt.xlabel('EEG Channel')
+    # plt.ylabel('PCA Transformed Feature Value')
+    # plt.title('Influence of EOG on EEG Channels via PCA')
+    # plt.xticks(range(1, 23), labels=channel_names, rotation=45)
+    # plt.tight_layout()
+    # plt.show()
     return transformed_features
 
 
@@ -230,15 +318,22 @@ def tpasr(transformed_features, raw_gdf):
     # Sort the transformed_features array
     sorted_features = np.sort(transformed_features)
 
-    # Calculate low_threshold and high_threshold based on the values at one-third and two-thirds positions
-    one_third_index = len(sorted_features) // 4
-    two_thirds_index = 3 * len(sorted_features) // 4
-
+    # # Calculate low_threshold and high_threshold based on the values at one-third and two-thirds positions
+    # one_third_index = len(sorted_features) // 5
+    # two_thirds_index = 4 * len(sorted_features) // 5
+    #
+    # # 假设 sorted_features 是一个排序后的一维数组
+    # low_threshold = round(float(sorted_features[one_third_index]), 3) if np.isscalar(
+    #     sorted_features[one_third_index]) else round(float(sorted_features[one_third_index][0]), 3)
+    # high_threshold = round(float(sorted_features[two_thirds_index]), 3) if np.isscalar(
+    #     sorted_features[two_thirds_index]) else round(float(sorted_features[two_thirds_index][0]), 3)
+    # 使用numpy的percentile函数计算阈值
     # 假设 sorted_features 是一个排序后的一维数组
-    low_threshold = round(float(sorted_features[one_third_index]), 3) if np.isscalar(
-        sorted_features[one_third_index]) else round(float(sorted_features[one_third_index][0]), 3)
-    high_threshold = round(float(sorted_features[two_thirds_index]), 3) if np.isscalar(
-        sorted_features[two_thirds_index]) else round(float(sorted_features[two_thirds_index][0]), 3)
+    mean_value = np.mean(sorted_features)
+    std_value = np.std(sorted_features)
+
+    low_threshold = round(float(mean_value - std_value), 3)
+    high_threshold = round(float(mean_value + std_value), 3)
 
     # 通道索引转换为通道名称
     channel_names = [
@@ -247,6 +342,26 @@ def tpasr(transformed_features, raw_gdf):
         'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
         'P1', 'Pz', 'P2', 'POz'
     ]
+    montage = mne.channels.make_standard_montage('standard_1020')
+    raw_gdf.info.set_montage(montage, on_missing='ignore')
+    raw_gdf.set_channel_types({'EOG-left': 'eog', 'EOG-central': 'eog', 'EOG-right': 'eog'})
+    # raw_gdf.compute_psd(fmin=0.5, fmax=100).plot(spatial_colors=True)
+    # # 创建MNE信息对象
+    # info = mne.create_info(
+    #     ch_names=['Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4', 'C5', 'C3', 'C1', 'Cz',
+    #               'C2', 'C4', 'C6', 'CP3', 'CP1', 'CPz', 'CP2', 'CP4', 'P1', 'Pz', 'P2', 'POz'],
+    #     ch_types=['eeg'] * 22,
+    #     sfreq=250  # 假设采样率为250Hz
+    # )
+    # # 使用标准电极位置信息
+    # montage = mne.channels.make_standard_montage('standard_1020')
+    # info.set_montage(montage)
+    # # 创建MNE数据对象
+    # raw = mne.io.RawArray(transformed_features, info)
+    # # 绘制地形图
+    # mne.viz.plot_topomap(transformed_features[:, 0], raw.info, names=channel_names, sensors=True, cmap='Reds',
+    #                      contours=4, size=3)
+    # plt.show()
 
     low_impact_channels = [channel_names[i] for i, feature in enumerate(transformed_features.flatten()) if
                            feature < low_threshold]
@@ -257,14 +372,15 @@ def tpasr(transformed_features, raw_gdf):
     print(low_impact_channels)
     print(medium_impact_channels)
     print(high_impact_channels)
+
     # 定义每组的ASR参数
-    asr_params_low = {'cutoff': 10, 'max_bad_chans': 0.3}
-    asr_params_medium = {'cutoff': 20, 'max_bad_chans': 0.2}
-    asr_params_high = {'cutoff': 30, 'max_bad_chans': 0.1}
+    asr_params_low = {'cutoff': 30, 'max_bad_chans': 0.3}
+    asr_params_medium = {'cutoff': 25, 'max_bad_chans': 0.2}
+    asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.1}
 
     # 创建一个新的Raw对象以避免在原始数据上直接修改
-    raw_processed = raw_gdf.copy()
 
+    eeg_processed = raw_gdf.copy()
     # 应用ASR处理
     for group, params in zip([low_impact_channels, medium_impact_channels, high_impact_channels],
                              [asr_params_low, asr_params_medium, asr_params_high]):
@@ -272,17 +388,21 @@ def tpasr(transformed_features, raw_gdf):
             # 初始化ASR实例
             asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=params['cutoff'], max_bad_chans=params['max_bad_chans'], )
             # 训练ASR
-            asr.fit(raw_processed, picks=group)
-
+            raw_processed = raw_gdf.copy()
+            asr.fit(raw_processed)
             # 应用ASR变换
-            raw_processed = asr.transform(raw_processed, picks=group)
+            raw_processed = asr.transform(raw_processed)
+            # 替换eeg_processed中的数据
+            for channel_name in group:
+                channel_index = channel_names.index(channel_name)
+                eeg_processed._data[channel_index] = raw_processed._data[channel_index]
 
-    return raw_processed
+    return eeg_processed
 
 
 def init_asr(raw_gdf):
-    # 使用ASR处理数据，这里不分组，cutoff设置为25
-    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.2)
+    # 使用ASR处理数据，这里不分组，cutoff设置为20
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.1)
     # 训练ASR
     asr.fit(raw_gdf)
     # 应用ASR变换
@@ -309,7 +429,6 @@ def plot_asr(epochs, cleaned_avg, channel_names):
 def asr_test(filename, training):
     if training:
         raw_gdf, events, events_id = read_raw_gdf(filename)
-        events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
         channel_names = [
             'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
             'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
@@ -317,9 +436,24 @@ def asr_test(filename, training):
             'P1', 'Pz', 'P2', 'POz'
         ]
         epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
+        start_time = time.time()
         transformed_features = pca_TPW(data)
+        end_time = time.time()  # 记录结束时间
+        total_time = end_time - start_time  # 计算总时间
+
+        print(f"相关性计算用时：{total_time:.2f}秒")
+        start_time = time.time()
         raw_processed = tpasr(transformed_features, raw_gdf)
+        end_time = time.time()  # 记录结束时间
+        total_time = end_time - start_time  # 计算总时间
+
+        print(f"MASR计算用时：{total_time:.2f}秒")
+        # start_time = time.time()
         raw_processed1 = init_asr(raw_gdf)
+        # end_time = time.time()  # 记录结束时间
+        # total_time = end_time - start_time  # 计算总时间
+        #
+        # print(f"ASR计算用时：{total_time:.2f}秒")
         cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
                                  picks=channel_names, event_repeated="drop")
         cleaned_avg1 = mne.Epochs(raw_processed1, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
@@ -331,13 +465,9 @@ def asr_test(filename, training):
         labels = cleaned_avg.events[:, -1] - 7
         # print(f"labels(After): {labels}")
         raw_data_selected_channels = epochs.get_data(copy=True)[:, :22, :]
-        raw_data_eog_channels = epochs.get_data(copy=True)[:, -3:, :]
         # plt_snr(cleand_data, raw_data_selected_channels)
         normal_asr = cleaned_avg1.get_data(copy=True)
-        analyze_merits.compare_nmse(cleand_data, raw_data_selected_channels, normal_asr)
-        analyze_merits.compare_rmse(cleand_data, raw_data_selected_channels, normal_asr)
-        analyze_merits.compare_snr(cleand_data, raw_data_selected_channels, raw_data_eog_channels, normal_asr)
-        analyze_merits.compare_mi(cleand_data, raw_data_selected_channels, normal_asr)
+        analyze_merits.compare_metrics(cleand_data, raw_data_selected_channels, normal_asr)
 
     else:
         raw_gdf, events, events_id = read_raw_gdf(filename)
@@ -363,4 +493,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("dataset/s8/A08T.gdf", training=True)
+asr_test("dataset/s9/A09T.gdf", training=True)

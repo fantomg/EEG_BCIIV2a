@@ -1,4 +1,7 @@
 import numpy as np
+from matplotlib import pyplot as plt
+import pandas as pd
+from pandas.plotting import parallel_coordinates
 
 
 def phase_space_reconstruction(data, embedding_dim, tau):
@@ -27,12 +30,12 @@ def extract_frequency_vectors(fft_S, fft_R):
     return w, v
 
 
-def calculate_tse(w, v, tau, phi):
+def calculate_tse(w, v, phi):
     num_frequencies = v.shape[0]
     tse_values = np.zeros(num_frequencies)
     for f in range(num_frequencies):
-        v_delay_vectors = [v[f, max(i - tau, 0):i] for i in range(phi, v.shape[1])]
-        w_delay_vectors = [w[f, max(i - tau, 0):i] for i in range(phi, w.shape[1])]
+        v_delay_vectors = [v[f, i] for i in range(phi, v.shape[1])]
+        w_delay_vectors = [w[f, i] for i in range(phi, w.shape[1])]
         hist_v, bin_edges_v = np.histogram(np.hstack(v_delay_vectors), bins='auto', density=True)
         hist_wv, bin_edges_wv = np.histogram(np.vstack([np.hstack(w_delay_vectors), np.hstack(v_delay_vectors)]),
                                              bins='auto', density=True)
@@ -51,11 +54,33 @@ def calculate_atse(tse_values, fl1, fl2):
     return atse
 
 
-def calculate_transfer_spectral_entropy(x, y, embedding_dim, tau, fl1, fl2, phi):
+def calculate_transfer_spectral_entropy(x, y, embedding_dim, tau, fl1, fl2):
     S = phase_space_reconstruction(x, embedding_dim, tau)
+    # # 转置数据，使得每列代表一个维度
+    # S_transposed = S.T
+    #
+    # # 将数据转换为 DataFrame
+    # df = pd.DataFrame(S_transposed, columns=[f'Dim {i}' for i in range(6)])
+    #
+    # # 创建3D图形
+    # fig = plt.figure(figsize=(8, 7))
+    # ax = fig.add_subplot(111, projection='3d')
+    #
+    # # 手动设置颜色
+    # colors = ['red', 'green', 'blue', 'orange', 'purple', 'brown']
+    #
+    # # 绘制散点图
+    # for i in range(6):
+    #     ax.scatter(df.index, [i] * len(df), df[f'Dim {i}'], color=colors[i], label=f'Dim {i + 1}', alpha=0.2)
+    #
+    # # 设置标签
+    # ax.set_xlabel('Samples')
+    # ax.set_ylabel('Dimensions')
+    # ax.set_zlabel('Values')
+    plt.show()
     R = phase_space_reconstruction(y, embedding_dim, tau)
     fft_S, fft_R = apply_2d_fft(S, R)
     w, v = extract_frequency_vectors(fft_S, fft_R)
-    tse_values = calculate_tse(w, v, tau, phi)
+    tse_values = calculate_tse(w, v, tau)
     atse = calculate_atse(tse_values, fl1, fl2)
     return atse
