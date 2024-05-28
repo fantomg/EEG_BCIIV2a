@@ -112,7 +112,7 @@ def wpd_plt(signal, n):
             map[i] = wp[i].data
 
     # 作图
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(16, 12))
     plt.subplot(n + 1, 1, 1)  # 绘制第一个图
     plt.plot(map[1])
     for i in range(2, n + 2):
@@ -238,62 +238,62 @@ def pca_TPW(data):
     # 应用PCA进行降维
     pca = PCA(n_components=1)
     transformed_features = pca.fit_transform(features)
-    print(transformed_features)
-    # 计算需要平移的量，使所有值为正
-    shift_amount = np.abs(transformed_features.min()) + 0.1  # 增加0.1来确保所有值都为正
-
-    # 对所有值进行平移
-    A_shifted = transformed_features + shift_amount
-    channels = ['Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
-                'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
-                'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
-                'P1', 'Pz', 'P2', 'POz']
-    # 根据脑电通道分布确定柱体的位置
-    positions = [
-        (2.5, 5),
-        (3.5, 4), (2.5, 4), (1.5, 4), (0.5, 4), (-0.5, 4),
-        (4.5, 3), (3.5, 3), (2.5, 3), (1.5, 3), (0.5, 3), (-0.5, 3), (-1.5, 3),
-        (3.5, 2), (2.5, 2), (1.5, 2), (0.5, 2), (-0.5, 2),
-        (2.5, 1), (1.5, 1), (0.5, 1),
-        (2.5, 0)
-    ]
-
-    xpos = np.array([p[0] for p in positions])
-    ypos = np.array([p[1] for p in positions])
-    zpos = np.zeros(len(xpos))
-
-    dx = dy = 0.5 * np.ones(len(xpos))
-    dz = A_shifted
-
-    # 创建画布和坐标轴
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # 设置颜色映射
-    colors = cm.plasma_r(np.linspace(0, 1, len(A_shifted)))  # 这里的 len(A) 应该是通道的数量，即22
-
-    # 绘制三维柱状图
-    for i in range(len(A_shifted)):
-        ax.bar3d(xpos[i], ypos[i], zpos[i], dx[i], dy[i], dz[i], color=colors[i])
-    # 在柱体上方显示通道名称
-
-    # 移除背景
-    ax.patch.set_alpha(0)
-
-    # 移除坐标轴
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_zticks([])
-    # 创建一个假的二维图以显示colorbar
-    x = np.linspace(0, 1, len(A_shifted))
-    y = np.ones(len(A_shifted))
-    c = np.linspace(0, 1, len(A_shifted))
-
-    plt.figure()
-    sc = plt.scatter(x, y, c=c, cmap='plasma')
-    plt.colorbar(sc)
-
-    plt.show()
+    # print(transformed_features)
+    # # 计算需要平移的量，使所有值为正
+    # shift_amount = np.abs(transformed_features.min()) + 0.1  # 增加0.1来确保所有值都为正
+    #
+    # # 对所有值进行平移
+    # A_shifted = transformed_features + shift_amount
+    # channels = ['Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+    #             'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+    #             'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+    #             'P1', 'Pz', 'P2', 'POz']
+    # # 根据脑电通道分布确定柱体的位置
+    # positions = [
+    #     (2.5, 5),
+    #     (3.5, 4), (2.5, 4), (1.5, 4), (0.5, 4), (-0.5, 4),
+    #     (4.5, 3), (3.5, 3), (2.5, 3), (1.5, 3), (0.5, 3), (-0.5, 3), (-1.5, 3),
+    #     (3.5, 2), (2.5, 2), (1.5, 2), (0.5, 2), (-0.5, 2),
+    #     (2.5, 1), (1.5, 1), (0.5, 1),
+    #     (2.5, 0)
+    # ]
+    #
+    # xpos = np.array([p[0] for p in positions])
+    # ypos = np.array([p[1] for p in positions])
+    # zpos = np.zeros(len(xpos))
+    #
+    # dx = dy = 0.5 * np.ones(len(xpos))
+    # dz = A_shifted
+    #
+    # # 创建画布和坐标轴
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    #
+    # # 设置颜色映射
+    # colors = cm.plasma_r(np.linspace(0, 1, len(A_shifted)))  # 这里的 len(A) 应该是通道的数量，即22
+    #
+    # # 绘制三维柱状图
+    # for i in range(len(A_shifted)):
+    #     ax.bar3d(xpos[i], ypos[i], zpos[i], dx[i], dy[i], dz[i], color=colors[i])
+    # # 在柱体上方显示通道名称
+    #
+    # # 移除背景
+    # ax.patch.set_alpha(0)
+    #
+    # # 移除坐标轴
+    # ax.set_xticks([])
+    # ax.set_yticks([])
+    # ax.set_zticks([])
+    # # 创建一个假的二维图以显示colorbar
+    # x = np.linspace(0, 1, len(A_shifted))
+    # y = np.ones(len(A_shifted))
+    # c = np.linspace(0, 1, len(A_shifted))
+    #
+    # plt.figure()
+    # sc = plt.scatter(x, y, c=c, cmap='plasma')
+    # plt.colorbar(sc)
+    #
+    # plt.show()
     # # 可视化
     # channel_names = [
     #     'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
@@ -423,7 +423,7 @@ def plot_asr(epochs, cleaned_avg, channel_names):
     # evoked2.plot(spatial_colors=True, titles="After ASR")
     difference_evoked = mne.combine_evoked([evoked1, evoked2], weights=[1, -1])
     # 使用plot方法绘制差异波形
-    difference_evoked.plot(spatial_colors=True, gfp=True, titles="Difference (Before - After ASR)")
+    difference_evoked.plot(spatial_colors=True, gfp=True, titles="Waveform Differences (Raw signal - After MASR)")
 
 
 def asr_test(filename, training):
@@ -493,4 +493,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("dataset/s9/A09T.gdf", training=True)
+asr_test("dataset/s2/A02T.gdf", training=True)

@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import MultipleLocator
 
 matplotlib.use('TkAgg')
 
@@ -326,7 +327,7 @@ def compare_snr(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250, 
     plt.show()
 
 
-def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250, fmin=0.5, fmax=50):
+def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250, fmin=0.5, fmax=100):
     """
     绘制处理后数据及另一个数据集的归一化均方误差（NMSE）、均方根误差（RMSE）、信噪比（SNR）和互信息（MI）的箱形图。
     参数：
@@ -375,68 +376,76 @@ def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, sfreq=2
         mi_values[i, 1] = mutual_info_score(disc_cleaned, disc_raw)
 
     # Create subplots
-    fig, axs = plt.subplots(4, 1, figsize=(8, 16))
+    fig, axs = plt.subplots(2, 2, figsize=(16, 4))
 
     # Plot RMSE
-    bplot_rmse = axs[0].boxplot([rmse_normal_asr, rmse_clean], patch_artist=True, showmeans=True, meanline=True,
+    bplot_rmse = axs[0,0].boxplot([rmse_normal_asr, rmse_clean], patch_artist=True, showmeans=True, meanline=True,
                                    positions=[1, 2], widths=0.2)
-    axs[0].set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=14)
-    axs[0].set_ylabel('RMSE', fontsize=12)
-    axs[0].set_xticks([1, 2])
-    axs[0].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[0,0].set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=14)
+    axs[0,0].set_ylabel('RMSE', fontsize=12)
+    axs[0,0].set_xticks([1, 2])
+    axs[0,0].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[0,0].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[0,0].yaxis.set_minor_locator(MultipleLocator(0.1))
     # Calculate mean RMSE for each dataset
     mean_rmse_clean = np.mean(rmse_clean)
     mean_rmse_normal_asr = np.mean(rmse_normal_asr)
     legend_labels = [f'ASR (Mean: {mean_rmse_normal_asr:.3})', f'MASR (Mean: {mean_rmse_clean:.3})']
-    axs[0].legend(
+    axs[0,0].legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot SNR
-    bplot_snr = axs[1].boxplot([normal_asr_snr_db, snr_db], patch_artist=True, showmeans=True, meanline=True,
+    bplot_snr = axs[1,0].boxplot([normal_asr_snr_db, snr_db], patch_artist=True, showmeans=True, meanline=True,
                                   positions=[1, 2], widths=0.2)
-    axs[1].set_title('Signal to Noise Ratio (SNR) Comparison', fontsize=14)
-    axs[1].set_ylabel('SNR (dB)', fontsize=12)
-    axs[1].set_xticks([1, 2])
-    axs[1].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[1,0].set_title('Signal to Noise Ratio (SNR) Comparison', fontsize=14)
+    axs[1,0].set_ylabel('SNR (dB)', fontsize=12)
+    axs[1,0].set_xticks([1, 2])
+    axs[1,0].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[1,0].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[1,0].yaxis.set_minor_locator(MultipleLocator(0.1))
     mean_snr_asr = np.mean(snr_db)
     mean_snr_normal_asr = np.mean(normal_asr_snr_db)
     legend_labels = [f'ASR (Mean: {mean_snr_normal_asr:.3})', f'MASR (Mean: {mean_snr_asr:.3})']
-    axs[1].legend(
+    axs[1,0].legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot NMSE
     nmse_clean = calculate_nmse(cleand_data, raw_data_selected_channels)
     nmse_normal_asr = calculate_nmse(normal_asr, raw_data_selected_channels)
-    bplot_nmse = axs[2].boxplot([nmse_normal_asr, nmse_clean], patch_artist=True, showmeans=True, meanline=True,
+    bplot_nmse = axs[0,1].boxplot([nmse_normal_asr, nmse_clean], patch_artist=True, showmeans=True, meanline=True,
                                    positions=[1, 2], widths=0.2)
-    axs[2].set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=14)
-    axs[2].set_ylabel('NMSE', fontsize=12)
-    axs[2].set_xticks([1, 2])
-    axs[2].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[0,1].set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=14)
+    axs[0,1].set_ylabel('NMSE', fontsize=12)
+    axs[0,1].set_xticks([1, 2])
+    axs[0,1].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[0,1].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[0,1].yaxis.set_minor_locator(MultipleLocator(0.1))
     # 计算每个数据集的平均NMSE
     mean_nmse_clean = np.mean(nmse_clean)
     mean_nmse_normal_asr = np.mean(nmse_normal_asr)
     legend_labels = [f'ASR (Mean: {mean_nmse_normal_asr:.3})', f'MASR (Mean: {mean_nmse_clean:.3})']
-    axs[2].legend(
+    axs[0,1].legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot MI
-    bplot_mi = axs[3].boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2],
+    bplot_mi = axs[1,1].boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2],
                                  widths=0.2)
-    axs[3].set_title('Mutual Information (MI) Comparison', fontsize=14)
-    axs[3].set_ylabel('MI', fontsize=12)
-    axs[3].set_xticks([1, 2])
-    axs[3].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[1,1].set_title('Mutual Information (MI) Comparison', fontsize=14)
+    axs[1,1].set_ylabel('MI', fontsize=12)
+    axs[1,1].set_xticks([1, 2])
+    axs[1,1].set_xticklabels(['ASR', 'MASR'], fontsize=10)
+    axs[1,1].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[1,1].yaxis.set_minor_locator(MultipleLocator(0.1))
     # Add legend
     # Calculate mean MI for each comparison
     mean_mi_clean_raw = np.mean(mi_values[:, 0])
     mean_mi_clean_asr = np.mean(mi_values[:, 1])
     legend_labels = [f'ASR (Mean MI: {mean_mi_clean_raw:.2f})',
                      f'MASR (Mean MI: {mean_mi_clean_asr:.2f})']
-    axs[3].legend(
+    axs[1,1].legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F')],
         labels=legend_labels, framealpha=1,
         loc='best')
