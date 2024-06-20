@@ -376,7 +376,7 @@ def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, sfreq=2
         mi_values[i, 1] = mutual_info_score(disc_cleaned, disc_raw)
 
     # Create subplots
-    fig, axs = plt.subplots(2, 2, figsize=(16, 4))
+    fig, axs = plt.subplots(2, 2, figsize=(14, 6))
 
     # Plot RMSE
     bplot_rmse = axs[0,0].boxplot([rmse_normal_asr, rmse_clean], patch_artist=True, showmeans=True, meanline=True,

@@ -1,13 +1,19 @@
+import cProfile
+import pstats
+
 import matplotlib
 import pywt
 import matplotlib.pyplot as plt
 import mne
 import numpy as np
 from asrpy import ASR
-from matplotlib import cm
-from matplotlib.colors import Normalize
+from matplotlib import patches
+from matplotlib.colors import LinearSegmentedColormap
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import MaxAbsScaler
+from joblib import Parallel, delayed
+
 import analyze_merits
 import tse
 import time
@@ -63,8 +69,8 @@ def get_epochs(raw_gdf, events, events_id):
     # 选择范围为Cue后 1s - 4s 的数据
     tmin, tmax = 1.5, 5.995
     # 四类 MI 对应的 events_id
-    events_id = dict({'769': 7, '770': 8})
-    # events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
+    # events_id = dict({'769': 7, '770': 8})
+    events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
 
     epochs = mne.Epochs(raw_gdf, events, events_id, tmin, tmax, proj=True, baseline=None, preload=True,
                         event_repeated='drop')
@@ -124,7 +130,71 @@ def wpd_plt(signal, n):
             plt.plot(map[re[j - 1]])  # 列表从0开始
 
 
-def pca_TPW(data):
+def visualize_channel_importance(transformed_features, channel_names):
+    """
+    可视化EEG通道的重要性。
+
+    参数:
+    transformed_features (numpy.ndarray): 经过转换的特征数组。
+    channel_names (list): EEG通道的名称列表。
+    """
+    # Initialize MaxAbsScaler
+    scaler = MaxAbsScaler()
+
+    # Fit and transform the transformed features
+    abs_scaled_features = scaler.fit_transform(transformed_features.reshape(-1, 1))
+
+    # 线性变换到 [0, 1] 的范围
+    normalized_features = (abs_scaled_features + 1) / 2
+
+    # Reshape the normalized features back to the original shape
+    normalized_features = normalized_features.reshape(transformed_features.shape)
+
+    # Calculate the mean and standard deviation of the normalized features
+    mean_value_normalized = np.mean(normalized_features)
+    std_dev_normalized = np.std(normalized_features)
+
+    # 创建渐变颜色映射
+    cmap = LinearSegmentedColormap.from_list('custom_cmap', ['skyblue', 'lightgreen', 'goldenrod'])
+
+    # 绘制图形
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # 设置背景颜色区域
+    ax.axhspan(mean_value_normalized + std_dev_normalized, 1, facecolor='peachpuff', alpha=0.5)
+    ax.axhspan(mean_value_normalized - std_dev_normalized, mean_value_normalized + std_dev_normalized,
+               facecolor='lightblue', alpha=0.5)
+    ax.axhspan(0, mean_value_normalized - std_dev_normalized, facecolor='lightgreen', alpha=0.5)
+    # 设置y轴范围
+    ax.set_ylim(0, 1)
+    # 绘制条形图，并设置渐变颜色
+    bar_width = 0.4  # 条形宽度
+    spacing = 0.1  # 条形间距
+    for i in range(len(normalized_features.flatten())):
+        value = normalized_features.flatten()[i]
+        for y in range(int(value * 40)):
+            rect = patches.Rectangle((i * (bar_width + spacing), y / 40), bar_width, 0.02, linewidth=0, edgecolor=None,
+                                     facecolor=cmap(y / 40))
+            ax.add_patch(rect)
+
+    # 绘制均值和标准差线
+    ax.axhline(mean_value_normalized + std_dev_normalized, color='r', linestyle='--', linewidth=2,
+               label='Positive Std Dev: {:.2f}'.format(mean_value_normalized + std_dev_normalized))
+    ax.axhline(mean_value_normalized - std_dev_normalized, color='r', linestyle='--', linewidth=2,
+               label='Negative Std Dev: {:.2f}'.format(mean_value_normalized - std_dev_normalized))
+
+    # 添加标签和标题
+    ax.set_xlabel('EEG Channel')
+    ax.set_ylabel('Channel Importance (Normalized)')
+    ax.set_title('Channel Importance Influenced by EOG via PCA (Normalized)')
+    ax.set_xticks([i * (bar_width + spacing) + bar_width / 2 for i in range(len(normalized_features.flatten()))])
+    ax.set_xticklabels(channel_names, rotation=45)
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def TPW(data, tolerance, cutoff_w):
     tsedata = np.mean(data, axis=0)
     num_rows = 22
     num_cols = 3
@@ -162,7 +232,7 @@ def pca_TPW(data):
     # 设置感兴趣的频率范围
     fmin, fmax = 0.5, 100  # Hz
     n_fft = 1125  # FFT的窗口大小，减小以匹配数据长度
-    n_per_seg = 512  # 每个段的长度，确保小于epoch的时间点数
+    n_per_seg = 256  # 每个段的长度，确保小于epoch的时间点数
 
     # 我们需要手动提取每个通道的数据
     num_channels = 25  # 假设我们有25个通道
@@ -239,62 +309,9 @@ def pca_TPW(data):
     pca = PCA(n_components=1)
     transformed_features = pca.fit_transform(features)
     # print(transformed_features)
-    # # 计算需要平移的量，使所有值为正
-    # shift_amount = np.abs(transformed_features.min()) + 0.1  # 增加0.1来确保所有值都为正
-    #
-    # # 对所有值进行平移
-    # A_shifted = transformed_features + shift_amount
-    # channels = ['Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
-    #             'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
-    #             'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
-    #             'P1', 'Pz', 'P2', 'POz']
-    # # 根据脑电通道分布确定柱体的位置
-    # positions = [
-    #     (2.5, 5),
-    #     (3.5, 4), (2.5, 4), (1.5, 4), (0.5, 4), (-0.5, 4),
-    #     (4.5, 3), (3.5, 3), (2.5, 3), (1.5, 3), (0.5, 3), (-0.5, 3), (-1.5, 3),
-    #     (3.5, 2), (2.5, 2), (1.5, 2), (0.5, 2), (-0.5, 2),
-    #     (2.5, 1), (1.5, 1), (0.5, 1),
-    #     (2.5, 0)
-    # ]
-    #
-    # xpos = np.array([p[0] for p in positions])
-    # ypos = np.array([p[1] for p in positions])
-    # zpos = np.zeros(len(xpos))
-    #
-    # dx = dy = 0.5 * np.ones(len(xpos))
-    # dz = A_shifted
-    #
-    # # 创建画布和坐标轴
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    #
-    # # 设置颜色映射
-    # colors = cm.plasma_r(np.linspace(0, 1, len(A_shifted)))  # 这里的 len(A) 应该是通道的数量，即22
-    #
-    # # 绘制三维柱状图
-    # for i in range(len(A_shifted)):
-    #     ax.bar3d(xpos[i], ypos[i], zpos[i], dx[i], dy[i], dz[i], color=colors[i])
-    # # 在柱体上方显示通道名称
-    #
-    # # 移除背景
-    # ax.patch.set_alpha(0)
-    #
-    # # 移除坐标轴
-    # ax.set_xticks([])
-    # ax.set_yticks([])
-    # ax.set_zticks([])
-    # # 创建一个假的二维图以显示colorbar
-    # x = np.linspace(0, 1, len(A_shifted))
-    # y = np.ones(len(A_shifted))
-    # c = np.linspace(0, 1, len(A_shifted))
-    #
-    # plt.figure()
-    # sc = plt.scatter(x, y, c=c, cmap='plasma')
-    # plt.colorbar(sc)
-    #
-    # plt.show()
-    # # 可视化
+    # 可视化
+
+    # Identify the channels with the highest and lowest impact
     # channel_names = [
     #     'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
     #     'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
@@ -302,33 +319,66 @@ def pca_TPW(data):
     #     'P1', 'Pz', 'P2', 'POz'
     # ]
     #
-    # plt.figure(figsize=(12, 8))
-    # plt.bar(range(1, 23), transformed_features.flatten(), color='skyblue')
-    # plt.xlabel('EEG Channel')
-    # plt.ylabel('PCA Transformed Feature Value')
-    # plt.title('Influence of EOG on EEG Channels via PCA')
-    # plt.xticks(range(1, 23), labels=channel_names, rotation=45)
-    # plt.tight_layout()
-    # plt.show()
-    return transformed_features
+    # visualize_channel_importance(transformed_features, channel_names)
+
+    max_diff = np.max(transformed_features) - np.min(transformed_features)
+    if max_diff > tolerance:
+        cutoff_w += 1
+    elif max_diff < (tolerance / 2):
+        cutoff_w -= 1
+    return transformed_features, cutoff_w
 
 
-def tpasr(transformed_features, raw_gdf):
+def pca_TPW(data, tolerance=0.4):
+    # 将整体数据进行PCA处理
+    num_splits = 5
+    data_splits = np.array_split(data, num_splits)
+    all_results = Parallel(n_jobs=-1)(delayed(TPW)(data_part, tolerance, 0) for data_part in data_splits)
+    combined_features, cutoff_ws = zip(*all_results)
+
+    # 取平均特征
+    combined_features = np.mean(combined_features, axis=0)
+
+    # 累加 cutoff_w 参数
+    cutoff_w = sum(cutoff_ws)
+    print("Cutoff group width: ", cutoff_w)
+
+    return combined_features, cutoff_w
+
+
+def visualize_topomap(transformed_features, channel_names, sfreq=250):
+    """
+    可视化EEG通道的重要性地形图。
+
+    参数:
+    transformed_features (numpy.ndarray): 经过转换的特征数组。
+    channel_names (list): EEG通道的名称列表。
+    sfreq (int): 采样率，默认为250Hz。
+    """
+    # 创建MNE信息对象
+    info = mne.create_info(
+        ch_names=channel_names,
+        ch_types=['eeg'] * len(channel_names),
+        sfreq=sfreq
+    )
+
+    # 使用标准电极位置信息
+    montage = mne.channels.make_standard_montage('standard_1020')
+    info.set_montage(montage)
+
+    # 创建MNE数据对象
+    raw = mne.io.RawArray(transformed_features, info)
+
+    # 绘制地形图
+    mne.viz.plot_topomap(transformed_features[:, 0], raw.info, names=channel_names, sensors=True, cmap='Reds',
+                         contours=4, size=3)
+    plt.show()
+
+
+def tpasr(transformed_features, raw_gdf, width):
     # 假设transformed_features是一个包含每个通道伪影影响程度的numpy数组
     # Sort the transformed_features array
     sorted_features = np.sort(transformed_features)
-
-    # # Calculate low_threshold and high_threshold based on the values at one-third and two-thirds positions
-    # one_third_index = len(sorted_features) // 5
-    # two_thirds_index = 4 * len(sorted_features) // 5
-    #
-    # # 假设 sorted_features 是一个排序后的一维数组
-    # low_threshold = round(float(sorted_features[one_third_index]), 3) if np.isscalar(
-    #     sorted_features[one_third_index]) else round(float(sorted_features[one_third_index][0]), 3)
-    # high_threshold = round(float(sorted_features[two_thirds_index]), 3) if np.isscalar(
-    #     sorted_features[two_thirds_index]) else round(float(sorted_features[two_thirds_index][0]), 3)
-    # 使用numpy的percentile函数计算阈值
-    # 假设 sorted_features 是一个排序后的一维数组
     mean_value = np.mean(sorted_features)
     std_value = np.std(sorted_features)
 
@@ -346,22 +396,13 @@ def tpasr(transformed_features, raw_gdf):
     raw_gdf.info.set_montage(montage, on_missing='ignore')
     raw_gdf.set_channel_types({'EOG-left': 'eog', 'EOG-central': 'eog', 'EOG-right': 'eog'})
     # raw_gdf.compute_psd(fmin=0.5, fmax=100).plot(spatial_colors=True)
-    # # 创建MNE信息对象
-    # info = mne.create_info(
-    #     ch_names=['Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4', 'C5', 'C3', 'C1', 'Cz',
-    #               'C2', 'C4', 'C6', 'CP3', 'CP1', 'CPz', 'CP2', 'CP4', 'P1', 'Pz', 'P2', 'POz'],
-    #     ch_types=['eeg'] * 22,
-    #     sfreq=250  # 假设采样率为250Hz
-    # )
-    # # 使用标准电极位置信息
-    # montage = mne.channels.make_standard_montage('standard_1020')
-    # info.set_montage(montage)
-    # # 创建MNE数据对象
-    # raw = mne.io.RawArray(transformed_features, info)
-    # # 绘制地形图
-    # mne.viz.plot_topomap(transformed_features[:, 0], raw.info, names=channel_names, sensors=True, cmap='Reds',
-    #                      contours=4, size=3)
-    # plt.show()
+    # 绘制地形图
+    # channel_names = [
+    #     'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4', 'C5', 'C3', 'C1', 'Cz',
+    #     'C2', 'C4', 'C6', 'CP3', 'CP1', 'CPz', 'CP2', 'CP4', 'P1', 'Pz', 'P2', 'POz'
+    # ]
+    #
+    # visualize_topomap(transformed_features, channel_names)
 
     low_impact_channels = [channel_names[i] for i, feature in enumerate(transformed_features.flatten()) if
                            feature < low_threshold]
@@ -374,8 +415,8 @@ def tpasr(transformed_features, raw_gdf):
     print(high_impact_channels)
 
     # 定义每组的ASR参数
-    asr_params_low = {'cutoff': 30, 'max_bad_chans': 0.3}
-    asr_params_medium = {'cutoff': 25, 'max_bad_chans': 0.2}
+    asr_params_low = {'cutoff': 20 + width + width, 'max_bad_chans': 0.3}
+    asr_params_medium = {'cutoff': 20 + width, 'max_bad_chans': 0.2}
     asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.1}
 
     # 创建一个新的Raw对象以避免在原始数据上直接修改
@@ -423,7 +464,7 @@ def plot_asr(epochs, cleaned_avg, channel_names):
     # evoked2.plot(spatial_colors=True, titles="After ASR")
     difference_evoked = mne.combine_evoked([evoked1, evoked2], weights=[1, -1])
     # 使用plot方法绘制差异波形
-    difference_evoked.plot(spatial_colors=True, gfp=True, titles="Waveform Differences (Raw signal - After MASR)")
+    difference_evoked.plot(spatial_colors=True, gfp=True, titles="Waveform Differences (Raw signal - After ASR)")
 
 
 def asr_test(filename, training):
@@ -437,23 +478,32 @@ def asr_test(filename, training):
         ]
         epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
         start_time = time.time()
-        transformed_features = pca_TPW(data)
+        transformed_features, width = pca_TPW(data)
         end_time = time.time()  # 记录结束时间
         total_time = end_time - start_time  # 计算总时间
 
         print(f"相关性计算用时：{total_time:.2f}秒")
+        # 运行性能分析
+        # profiler = cProfile.Profile()
+        # profiler.enable()
         start_time = time.time()
-        raw_processed = tpasr(transformed_features, raw_gdf)
+        raw_processed = tpasr(transformed_features, raw_gdf, width)
+        end_time = time.time()  # 记录结束时间
+        total_time = end_time - start_time  # 计算总时间
+        print(f"MASR计算用时：{total_time:.2f}秒")
+        # profiler.disable()
+        # # 保存性能分析结果
+        # profiler.dump_stats("asr_profile.prof")
+        #
+        # # 分析并打印性能分析结果
+        # stats = pstats.Stats("asr_profile.prof")
+        # stats.sort_stats("cumulative").print_stats(10)
+        start_time = time.time()
+        raw_processed1 = init_asr(raw_gdf)
         end_time = time.time()  # 记录结束时间
         total_time = end_time - start_time  # 计算总时间
 
-        print(f"MASR计算用时：{total_time:.2f}秒")
-        # start_time = time.time()
-        raw_processed1 = init_asr(raw_gdf)
-        # end_time = time.time()  # 记录结束时间
-        # total_time = end_time - start_time  # 计算总时间
-        #
-        # print(f"ASR计算用时：{total_time:.2f}秒")
+        print(f"ASR计算用时：{total_time:.2f}秒")
         cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
                                  picks=channel_names, event_repeated="drop")
         cleaned_avg1 = mne.Epochs(raw_processed1, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
@@ -473,8 +523,8 @@ def asr_test(filename, training):
         raw_gdf, events, events_id = read_raw_gdf(filename)
         events_id = dict({'1023': 1, '1072': 2, '276': 3, '277': 4, '32766': 5, '768': 6, '783': 7})
         epochs, events_id, data = get_epochs(raw_gdf, events, events_id)
-        transformed_features = pca_TPW(data)
-        raw_processed = tpasr(transformed_features, raw_gdf)
+        transformed_features, width = pca_TPW(data)
+        raw_processed = tpasr(transformed_features, raw_gdf, width)
         # 加载或创建通道位置信息
         montage = mne.channels.make_standard_montage('standard_1020')
         channel_names = [
@@ -493,4 +543,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("dataset/s2/A02T.gdf", training=True)
+asr_test("dataset/s1/A01T.gdf", training=True)
