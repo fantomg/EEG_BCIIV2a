@@ -9,6 +9,7 @@ import numpy as np
 from asrpy import ASR
 from matplotlib import patches
 from matplotlib.colors import LinearSegmentedColormap
+from mne.preprocessing import ICA
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import MaxAbsScaler
@@ -194,6 +195,13 @@ def visualize_channel_importance(transformed_features, channel_names):
     plt.show()
 
 
+def calculate_cv(data):
+    mean = np.mean(data)
+    std = np.std(data)
+    cv = (std / mean) * 100
+    return cv
+
+
 def TPW(data, tolerance, cutoff_w):
     tsedata = np.mean(data, axis=0)
     num_rows = 22
@@ -320,16 +328,20 @@ def TPW(data, tolerance, cutoff_w):
     # ]
     #
     # visualize_channel_importance(transformed_features, channel_names)
+    # Initialize MaxAbsScaler
+    scaler = MaxAbsScaler()
 
-    max_diff = np.max(transformed_features) - np.min(transformed_features)
-    if max_diff > tolerance:
+    # Fit and transform the transformed features
+    abs_scaled_features = scaler.fit_transform(transformed_features.reshape(-1, 1))
+
+    # 线性变换到 [0, 1] 的范围
+    normalized_features = (abs_scaled_features + 1) / 2
+    if calculate_cv(normalized_features) > 1:
         cutoff_w += 1
-    elif max_diff < (tolerance / 2):
-        cutoff_w -= 1
     return transformed_features, cutoff_w
 
 
-def pca_TPW(data, tolerance=0.4):
+def pca_TPW(data, tolerance=0.2):
     # 将整体数据进行PCA处理
     num_splits = 5
     data_splits = np.array_split(data, num_splits)
@@ -417,7 +429,7 @@ def tpasr(transformed_features, raw_gdf, width):
     # 定义每组的ASR参数
     asr_params_low = {'cutoff': 20 + width + width, 'max_bad_chans': 0.3}
     asr_params_medium = {'cutoff': 20 + width, 'max_bad_chans': 0.2}
-    asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.1}
+    asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.2}
 
     # 创建一个新的Raw对象以避免在原始数据上直接修改
 
@@ -443,7 +455,7 @@ def tpasr(transformed_features, raw_gdf, width):
 
 def init_asr(raw_gdf):
     # 使用ASR处理数据，这里不分组，cutoff设置为20
-    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.1)
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.2)
     # 训练ASR
     asr.fit(raw_gdf)
     # 应用ASR变换
@@ -504,12 +516,27 @@ def asr_test(filename, training):
         total_time = end_time - start_time  # 计算总时间
 
         print(f"ASR计算用时：{total_time:.2f}秒")
+        raw_gdf.set_eeg_reference('average', projection=True)
+
+        # 拟合 ICA 模型
+        ica = ICA(n_components=22, method='picard')
+        ica.fit(raw_gdf)
+
+        # 识别和标记 EOG 伪影
+        eog_inds, scores = ica.find_bads_eog(raw_gdf)  # find which ICs match the EOG pattern
+        ica.exclude = eog_inds  # 标记要排除的独立成分
+
+        # 应用 ICA 来去除伪影成分
+        raw_processed2 = ica.apply(raw_gdf.copy())
         cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
                                  picks=channel_names, event_repeated="drop")
         cleaned_avg1 = mne.Epochs(raw_processed1, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
                                   picks=channel_names, event_repeated="drop")
+        cleaned_avg2 = mne.Epochs(raw_processed2, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
+                                  picks=channel_names, event_repeated="drop")
         plot_asr(epochs, cleaned_avg, channel_names)
         plot_asr(epochs, cleaned_avg1, channel_names)
+        plot_asr(epochs, cleaned_avg2, channel_names)
         cleand_data = cleaned_avg.get_data(copy=True)
         # print(f"Epochs(After): {cleand_data.shape}")
         labels = cleaned_avg.events[:, -1] - 7
@@ -517,7 +544,8 @@ def asr_test(filename, training):
         raw_data_selected_channels = epochs.get_data(copy=True)[:, :22, :]
         # plt_snr(cleand_data, raw_data_selected_channels)
         normal_asr = cleaned_avg1.get_data(copy=True)
-        analyze_merits.compare_metrics(cleand_data, raw_data_selected_channels, normal_asr)
+        ica_eeg = cleaned_avg2.get_data(copy=True)
+        analyze_merits.compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, ica_eeg)
 
     else:
         raw_gdf, events, events_id = read_raw_gdf(filename)
@@ -543,4 +571,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("dataset/s1/A01T.gdf", training=True)
+asr_test("dataset/s7/A07T.gdf", training=True)
