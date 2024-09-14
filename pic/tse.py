@@ -1,42 +1,34 @@
-import matplotlib.patches as patches
-from matplotlib import pyplot as plt
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Setting up the figure and axes
-fig, ax = plt.subplots(figsize=(10, 8))
+# 生成时间轴
+t = np.linspace(0, 1, 1000)
 
-# Create a simple flow chart
-# Nodes
-nodes = {
-    "Data Preparation": (0.5, 0.8),
-    "Phase Space Reconstruction": (0.5, 0.6),
-    "Apply 2D FFT": (0.5, 0.4),
-    "Extract Frequency Vectors": (0.5, 0.2),
-    "Calculate TSE": (0.25, 0.0),
-    "Calculate ATSE": (0.75, 0.0)
-}
+# 生成几条带有伪影的时域信号
+def generate_signal(t, frequency, noise_level):
+    signal = np.sin(2 * np.pi * frequency * t)
+    noise = noise_level * np.random.normal(size=t.shape)
+    return signal + noise
 
-# Arrows and annotations
-for node, (x, y) in nodes.items():
-    ax.text(x, y, node, ha='center', va='center', fontsize=12,
-            bbox=dict(boxstyle="round,pad=0.3", edgecolor='black', facecolor='lightblue'))
+# 设置参数
+frequencies = [5, 10, 15]  # 不同的频率
+noise_level = 0.2  # 噪声级别
 
-# Connecting lines
-arrows = [
-    ("Data Preparation", "Phase Space Reconstruction"),
-    ("Phase Space Reconstruction", "Apply 2D FFT"),
-    ("Apply 2D FFT", "Extract Frequency Vectors"),
-    ("Extract Frequency Vectors", "Calculate TSE"),
-    ("Extract Frequency Vectors", "Calculate ATSE")
-]
+# 创建图像
+plt.figure(figsize=(10, 6))
+plt.title("时域信号")
 
-for start, end in arrows:
-    start_x, start_y = nodes[start]
-    end_x, end_y = nodes[end]
-    ax.annotate("", xy=(end_x, end_y + 0.05), xytext=(start_x, start_y - 0.05),
-                arrowprops=dict(arrowstyle="->", lw=1.5))
+# 为每个频率生成信号并绘制
+for freq in frequencies:
+    signal = generate_signal(t, freq, noise_level)
+    plt.plot(t, signal, label=f'频率={freq}Hz')
 
-# Removing axes and setting aspect
-ax.set_xlim(0, 1)
-ax.set_ylim(0, 1)
-ax.axis('off')
+# 设置图像的白底和黑色线
+plt.gca().set_facecolor('white')
+plt.grid(True, which='both', lw=0.5)
+plt.axhline(y=0, color='k')
+plt.axvline(x=0, color='k')
+plt.xlabel('时间 (s)')
+plt.ylabel('幅度')
+plt.legend()
 plt.show()

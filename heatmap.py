@@ -367,10 +367,6 @@ def asr_test(filename, training):
         # plt_snr(cleand_data, raw_data_selected_channels)
         normal_asr = cleaned_avg1.get_data(copy=True)
         normal_asr1 = cleaned_avg1.get_data(copy=True)
-        analyze_merits.compare_nmse(cleand_data, raw_data_selected_channels, normal_asr)
-        analyze_merits.compare_rmse(cleand_data, raw_data_selected_channels, normal_asr)
-        analyze_merits.compare_snr(cleand_data, raw_data_selected_channels, raw_data_eog_channels, normal_asr)
-        analyze_merits.compare_mi(cleand_data, raw_data_selected_channels, normal_asr)
 
     else:
         raw_gdf, events, events_id = read_raw_gdf(filename)

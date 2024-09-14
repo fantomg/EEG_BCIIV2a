@@ -327,7 +327,8 @@ def compare_snr(cleand_data, raw_data_selected_channels, normal_asr, sfreq=250, 
     plt.show()
 
 
-def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, ica_eeg, sfreq=250, fmin=0.5, fmax=100):
+def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, SSP_eeg, sfreq=250, fmin=0.5,
+                    fmax=100):
     """
     绘制处理后数据及另一个数据集的归一化均方误差（NMSE）、均方根误差（RMSE）、信噪比（SNR）和互信息（MI）的箱形图。
     参数：
@@ -349,8 +350,8 @@ def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, ica_eeg
     # Calculate RMSE
     rmse_clean = calculate_rmse(cleand_data, raw_data_selected_channels)
     rmse_normal_asr = calculate_rmse(normal_asr, raw_data_selected_channels)
-    rmse_ica = calculate_rmse(ica_eeg, raw_data_selected_channels)
-
+    rmse_picard = calculate_rmse(picard_eeg, raw_data_selected_channels)
+    rmse_SSP = calculate_rmse(SSP_eeg, raw_data_selected_channels)
     # Calculate SNR
     signal_power = calculate_power(cleand_data, sfreq, fmin, fmax)
     noise_power = calculate_power(cleand_data - raw_data_selected_channels, sfreq, fmin, fmax)
@@ -359,122 +360,309 @@ def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, ica_eeg
     normal_asr_power = calculate_power(normal_asr - raw_data_selected_channels, sfreq, fmin, fmax)
     normal_asr_snr_linear = signal_power / (normal_asr_power + 1e-10)
     normal_asr_snr_db = 10 * np.log10(normal_asr_snr_linear)
-    ica_power = calculate_power(abs(ica_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
-    ica_snr_linear = signal_power / (ica_power + 1e-10)
-    ica_snr_db = 10 * np.log10(ica_snr_linear)
+    picard_power = calculate_power(abs(picard_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    picard_snr_linear = signal_power / (picard_power + 1e-10)
+    picard_snr_db = 10 * np.log10(picard_snr_linear)
+    SSP_power = calculate_power(abs(SSP_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    SSP_snr_linear = signal_power / (SSP_power + 1e-10)
+    SSP_snr_db = 10 * np.log10(SSP_snr_linear)
 
     # Calculate MI
     n_epochs, n_channels, _ = cleand_data.shape
 
     # Initialize an array to store MI values
-    mi_values = np.zeros((n_channels, 3))  # Two columns for the two comparisons
+    mi_values = np.zeros((n_channels, 4))  # Two columns for the two comparisons
 
     for i in range(n_channels):
         # Discretize the signals
         disc_cleaned = discretize_signal(cleand_data[:, i, :].flatten())
         disc_raw = discretize_signal(raw_data_selected_channels[:, i, :].flatten())
         disc_normal_asr = discretize_signal(normal_asr[:, i, :].flatten())
-        disc_ica = discretize_signal(ica_eeg[:, i, :].flatten())
+        disc_picard = discretize_signal(picard_eeg[:, i, :].flatten())
+        disc_SSP = discretize_signal(SSP_eeg[:, i, :].flatten())
 
         # Calculate MI between cleaned and raw, and cleaned and normal ASR
-        mi_values[i, 0] = mutual_info_score(disc_ica, disc_raw)
-        mi_values[i, 1] = mutual_info_score(disc_normal_asr, disc_raw)
-        mi_values[i, 2] = mutual_info_score(disc_cleaned, disc_raw)
+        mi_values[i, 0] = mutual_info_score(disc_picard, disc_raw)
+        mi_values[i, 1] = mutual_info_score(disc_SSP, disc_raw)
+        mi_values[i, 2] = mutual_info_score(disc_normal_asr, disc_raw)
+        mi_values[i, 3] = mutual_info_score(disc_cleaned, disc_raw)
 
     # Create subplots
     fig, axs = plt.subplots(2, 2, figsize=(14, 6))
 
     # Plot RMSE
-    bplot_rmse = axs[0, 0].boxplot([rmse_ica, rmse_normal_asr, rmse_clean], patch_artist=True, showmeans=True,
+    bplot_rmse = axs[0, 0].boxplot([rmse_picard, rmse_SSP, rmse_normal_asr, rmse_clean], patch_artist=True,
+                                   showmeans=True,
                                    meanline=True,
-                                   positions=[1, 2, 3], widths=0.15, showfliers=False)
+                                   positions=[1, 2, 3, 4], widths=0.15, showfliers=False)
     axs[0, 0].set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=14)
     axs[0, 0].set_ylabel('RMSE', fontsize=12)
-    axs[0, 0].set_xticks([1, 2, 3])
-    axs[0, 0].set_xticklabels(['Picard', 'ASR', 'MASR'], fontsize=10)
+    axs[0, 0].set_xticks([1, 2, 3, 4])
+    axs[0, 0].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
     axs[0, 0].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
     axs[0, 0].yaxis.set_minor_locator(MultipleLocator(0.1))
     # Calculate mean RMSE for each dataset
     mean_rmse_clean = np.mean(rmse_clean)
     mean_rmse_normal_asr = np.mean(rmse_normal_asr)
-    mean_rmse_ica = np.mean(rmse_ica)
-    legend_labels = [f'Picard (Mean: {mean_rmse_ica:.3})', f'ASR (Mean: {mean_rmse_normal_asr:.3})',
+    mean_rmse_picard = np.mean(rmse_picard)
+    mean_rmse_SSP = np.mean(rmse_SSP)
+    legend_labels = [f'Picard (Mean: {mean_rmse_picard:.3})', f'SSP (Mean: {mean_rmse_SSP:.3})',
+                     f'ASR (Mean: {mean_rmse_normal_asr:.3})',
                      f'MASR (Mean: {mean_rmse_clean:.3})']
     axs[0, 0].legend(
-        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F'),
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F'),
                  plt.Rectangle((0, 0), 0.5, 2, color='#09569F')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot SNR
-    bplot_snr = axs[1, 0].boxplot([ica_snr_db, normal_asr_snr_db, snr_db], patch_artist=True, showmeans=True,
+    bplot_snr = axs[1, 0].boxplot([picard_snr_db, SSP_snr_db, normal_asr_snr_db, snr_db], patch_artist=True,
+                                  showmeans=True,
                                   meanline=True,
-                                  positions=[1, 2, 3], widths=0.15, showfliers=False)
+                                  positions=[1, 2, 3, 4], widths=0.15, showfliers=False)
     axs[1, 0].set_title('Signal to Noise Ratio (SNR) Comparison', fontsize=14)
     axs[1, 0].set_ylabel('SNR (dB)', fontsize=12)
-    axs[1, 0].set_xticks([1, 2, 3])
-    axs[1, 0].set_xticklabels(['Picard', 'ASR', 'MASR'], fontsize=10)
+    axs[1, 0].set_xticks([1, 2, 3, 4])
+    axs[1, 0].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
     axs[1, 0].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
     axs[1, 0].yaxis.set_minor_locator(MultipleLocator(0.1))
     mean_snr_asr = np.mean(snr_db)
     mean_snr_normal_asr = np.mean(normal_asr_snr_db)
-    mean_ica_snr_db = np.mean(ica_snr_db)
-    legend_labels = [f'Picard (Mean: {mean_ica_snr_db:.3})', f'ASR (Mean: {mean_snr_normal_asr:.3})',
+    mean_picard_snr_db = np.mean(picard_snr_db)
+    mean_SSP_snr_db = np.mean(SSP_snr_db)
+    legend_labels = [f'Picard (Mean: {mean_picard_snr_db:.3})', f'SSP (Mean: {mean_SSP_snr_db:.3})',
+                     f'ASR (Mean: {mean_snr_normal_asr:.3})',
                      f'MASR (Mean: {mean_snr_asr:.3})']
     axs[1, 0].legend(
-        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F',),
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F', ),
                  plt.Rectangle((0, 0), 0.5, 2, color='#09569F')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot NMSE
     nmse_clean = calculate_nmse(cleand_data, raw_data_selected_channels)
     nmse_normal_asr = calculate_nmse(normal_asr, raw_data_selected_channels)
-    nmse_ica = calculate_nmse(ica_eeg, raw_data_selected_channels)
+    nmse_picard = calculate_nmse(picard_eeg, raw_data_selected_channels)
+    nmse_SSP = calculate_nmse(SSP_eeg, raw_data_selected_channels)
 
-    bplot_nmse = axs[0, 1].boxplot([nmse_ica, nmse_normal_asr, nmse_clean], patch_artist=True, showmeans=True,
+    bplot_nmse = axs[0, 1].boxplot([nmse_picard, nmse_SSP, nmse_normal_asr, nmse_clean], patch_artist=True,
+                                   showmeans=True,
                                    meanline=True,
-                                   positions=[1, 2, 3], widths=0.15, showfliers=False)
+                                   positions=[1, 2, 3, 4], widths=0.15, showfliers=False)
     axs[0, 1].set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=14)
     axs[0, 1].set_ylabel('NMSE', fontsize=12)
-    axs[0, 1].set_xticks([1, 2, 3])
-    axs[0, 1].set_xticklabels(['Picard', 'ASR', 'MASR'], fontsize=10)
+    axs[0, 1].set_xticks([1, 2, 3, 4])
+    axs[0, 1].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
     axs[0, 1].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
     axs[0, 1].yaxis.set_minor_locator(MultipleLocator(0.1))
     # 计算每个数据集的平均NMSE
     mean_nmse_clean = np.mean(nmse_clean)
     mean_nmse_normal_asr = np.mean(nmse_normal_asr)
-    mean_ica_snr_db = np.mean(nmse_ica)
-    legend_labels = [f'Picard (Mean: {mean_ica_snr_db:.3})', f'ASR (Mean: {mean_nmse_normal_asr:.3})',
+    mean_picard_snr_db = np.mean(nmse_picard)
+    mean_SSP_snr_db = np.mean(nmse_SSP)
+    legend_labels = [f'Picard (Mean: {mean_picard_snr_db:.3})', f'SSP (Mean: {mean_SSP_snr_db:.3})',
+                     f'ASR (Mean: {mean_nmse_normal_asr:.3})',
                      f'MASR (Mean: {mean_nmse_clean:.3})']
     axs[0, 1].legend(
-        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F',),
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F', ),
                  plt.Rectangle((0, 0), 0.5, 2, color='#09569F')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot MI
-    bplot_mi = axs[1, 1].boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2, 3],
+    bplot_mi = axs[1, 1].boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2, 3, 4],
                                  widths=0.15, showfliers=False)
     axs[1, 1].set_title('Mutual Information (MI) Comparison', fontsize=14)
     axs[1, 1].set_ylabel('MI', fontsize=12)
-    axs[1, 1].set_xticks([1, 2, 3])
-    axs[1, 1].set_xticklabels(['Picard', 'ASR', 'MASR'], fontsize=10)
+    axs[1, 1].set_xticks([1, 2, 3, 4])
+    axs[1, 1].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
     axs[1, 1].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
     axs[1, 1].yaxis.set_minor_locator(MultipleLocator(0.1))
     # Add legend
     # Calculate mean MI for each comparison
-    mean_mi_ica = np.mean(mi_values[:, 0])
-    mean_mi_clean_raw = np.mean(mi_values[:, 1])
-    mean_mi_clean_asr = np.mean(mi_values[:, 2])
-    legend_labels = [f'Picard (Mean MI: {mean_mi_ica:.2f})', f'ASR (Mean MI: {mean_mi_clean_raw:.2f})',
+    mean_mi_picard = np.mean(mi_values[:, 0])
+    mean_mi_SSP = np.mean(mi_values[:, 1])
+    mean_mi_clean_raw = np.mean(mi_values[:, 2])
+    mean_mi_clean_asr = np.mean(mi_values[:, 3])
+    legend_labels = [f'Picard (Mean MI: {mean_mi_picard:.2f})', f'SSP (Mean MI: {mean_mi_SSP:.2f})',
+                     f'ASR (Mean MI: {mean_mi_clean_raw:.2f})',
                      f'MASR (Mean MI: {mean_mi_clean_asr:.2f})']
     axs[1, 1].legend(
-        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F'),
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'), plt.Rectangle((0, 0), 0.5, 2, color='#AED6F1'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#F9E79F'),
                  plt.Rectangle((0, 0), 0.5, 2, color='#09569F')],
         labels=legend_labels, framealpha=1,
         loc='best')
 
     # Set box colors
     for bplot in [bplot_rmse, bplot_snr, bplot_nmse, bplot_mi]:
-        for patch, color in zip(bplot['boxes'], ['#AED6F1', '#F9E79F', '#09569F']):
+        for patch, color in zip(bplot['boxes'], ['#AED6F1', '#AED6F1', '#F9E79F', '#09569F']):
+            patch.set_facecolor(color)
+            patch.set_edgecolor('black')
+
+    # Show grid lines
+    for ax in axs.flatten():
+        ax.grid(True, linestyle='--', alpha=0.7)
+
+    # Adjust layout and display plot
+    plt.tight_layout()
+    plt.show()
+
+def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, SSP_eeg, sfreq=250, fmin=0.5,
+                    fmax=100):
+    """
+    绘制处理后数据及另一个数据集的归一化均方误差（NMSE）、均方根误差（RMSE）、信噪比（SNR）和互信息（MI）的箱形图。
+    参数：
+    cleand_data : numpy.ndarray
+        处理后的数据数组。
+    raw_data_selected_channels : numpy.ndarray
+        原始数据中选择的通道。
+    normal_asr : numpy.ndarray
+        另一个数据集。
+    raw_data_eog_channels : numpy.ndarray
+        原始数据中的眼动通道。
+    sfreq : int
+        采样频率。
+    fmin : int
+        最小频率。
+    fmax : int
+        最大频率。
+    """
+    # Calculate RMSE
+    rmse_clean = calculate_rmse(cleand_data, raw_data_selected_channels)
+    rmse_normal_asr = calculate_rmse(normal_asr, raw_data_selected_channels)
+    rmse_picard = calculate_rmse(picard_eeg, raw_data_selected_channels)
+    rmse_SSP = calculate_rmse(SSP_eeg, raw_data_selected_channels)
+    # Calculate SNR
+    signal_power = calculate_power(cleand_data, sfreq, fmin, fmax)
+    noise_power = calculate_power(cleand_data - raw_data_selected_channels, sfreq, fmin, fmax)
+    snr_linear = signal_power / (noise_power + 1e-10)
+    snr_db = 10 * np.log10(snr_linear)
+    normal_asr_power = calculate_power(normal_asr - raw_data_selected_channels, sfreq, fmin, fmax)
+    normal_asr_snr_linear = signal_power / (normal_asr_power + 1e-10)
+    normal_asr_snr_db = 10 * np.log10(normal_asr_snr_linear)
+    picard_power = calculate_power(abs(picard_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    picard_snr_linear = signal_power / (picard_power + 1e-10)
+    picard_snr_db = 10 * np.log10(picard_snr_linear)
+    SSP_power = calculate_power(abs(SSP_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    SSP_snr_linear = signal_power / (SSP_power + 1e-10)
+    SSP_snr_db = 10 * np.log10(SSP_snr_linear)
+
+    # Calculate MI
+    n_epochs, n_channels, _ = cleand_data.shape
+
+    # Initialize an array to store MI values
+    mi_values = np.zeros((n_channels, 4))  # Two columns for the two comparisons
+
+    for i in range(n_channels):
+        # Discretize the signals
+        disc_cleaned = discretize_signal(cleand_data[:, i, :].flatten())
+        disc_raw = discretize_signal(raw_data_selected_channels[:, i, :].flatten())
+        disc_normal_asr = discretize_signal(normal_asr[:, i, :].flatten())
+        disc_picard = discretize_signal(picard_eeg[:, i, :].flatten())
+        disc_SSP = discretize_signal(SSP_eeg[:, i, :].flatten())
+
+        # Calculate MI between cleaned and raw, and cleaned and normal ASR
+        mi_values[i, 0] = mutual_info_score(disc_picard, disc_raw)
+        mi_values[i, 1] = mutual_info_score(disc_SSP, disc_raw)
+        mi_values[i, 2] = mutual_info_score(disc_normal_asr, disc_raw)
+        mi_values[i, 3] = mutual_info_score(disc_cleaned, disc_raw)
+
+    # Create subplots
+    fig, axs = plt.subplots(4, 1, figsize=(8, 14))
+
+    # Plot RMSE
+    bplot_rmse = axs[0].boxplot([rmse_picard, rmse_SSP, rmse_normal_asr, rmse_clean], patch_artist=True,
+                                showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    axs[0].set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=14)
+    axs[0].set_ylabel('RMSE', fontsize=12)
+    axs[0].set_xticks([1, 2, 3, 4])
+    axs[0].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    axs[0].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[0].yaxis.set_minor_locator(MultipleLocator(0.1))
+    # Calculate mean RMSE for each dataset
+    mean_rmse_clean = np.mean(rmse_clean)
+    mean_rmse_normal_asr = np.mean(rmse_normal_asr)
+    mean_rmse_picard = np.mean(rmse_picard)
+    mean_rmse_SSP = np.mean(rmse_SSP)
+    legend_labels = [f'Picard (Mean: {mean_rmse_picard:.3})', f'SSP (Mean: {mean_rmse_SSP:.3})',
+                     f'ASR (Mean: {mean_rmse_normal_asr:.3})', f'MASR (Mean: {mean_rmse_clean:.3})']
+    axs[0].legend(
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
+        labels=legend_labels, framealpha=1, loc='best')
+
+    # Plot SNR
+    bplot_snr = axs[1].boxplot([picard_snr_db, SSP_snr_db, normal_asr_snr_db, snr_db], patch_artist=True,
+                               showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    axs[1].set_title('Signal to Noise Ratio (SNR) Comparison', fontsize=14)
+    axs[1].set_ylabel('SNR (dB)', fontsize=12)
+    axs[1].set_xticks([1, 2, 3, 4])
+    axs[1].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    axs[1].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[1].yaxis.set_minor_locator(MultipleLocator(0.1))
+    mean_snr_asr = np.mean(snr_db)
+    mean_snr_normal_asr = np.mean(normal_asr_snr_db)
+    mean_picard_snr_db = np.mean(picard_snr_db)
+    mean_SSP_snr_db = np.mean(SSP_snr_db)
+    legend_labels = [f'Picard (Mean: {mean_picard_snr_db:.3})', f'SSP (Mean: {mean_SSP_snr_db:.3})',
+                     f'ASR (Mean: {mean_snr_normal_asr:.3})', f'MASR (Mean: {mean_snr_asr:.3})']
+    axs[1].legend(
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
+        labels=legend_labels, framealpha=1, loc='best')
+
+    # Plot NMSE
+    nmse_clean = calculate_nmse(cleand_data, raw_data_selected_channels)
+    nmse_normal_asr = calculate_nmse(normal_asr, raw_data_selected_channels)
+    nmse_picard = calculate_nmse(picard_eeg, raw_data_selected_channels)
+    nmse_SSP = calculate_nmse(SSP_eeg, raw_data_selected_channels)
+
+    bplot_nmse = axs[2].boxplot([nmse_picard, nmse_SSP, nmse_normal_asr, nmse_clean], patch_artist=True,
+                                showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    axs[2].set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=14)
+    axs[2].set_ylabel('NMSE', fontsize=12)
+    axs[2].set_xticks([1, 2, 3, 4])
+    axs[2].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    axs[2].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[2].yaxis.set_minor_locator(MultipleLocator(0.1))
+    # 计算每个数据集的平均NMSE
+    mean_nmse_clean = np.mean(nmse_clean)
+    mean_nmse_normal_asr = np.mean(nmse_normal_asr)
+    mean_picard_snr_db = np.mean(nmse_picard)
+    mean_SSP_snr_db = np.mean(nmse_SSP)
+    legend_labels = [f'Picard (Mean: {mean_picard_snr_db:.3})', f'SSP (Mean: {mean_SSP_snr_db:.3})',
+                     f'ASR (Mean: {mean_nmse_normal_asr:.3})', f'MASR (Mean: {mean_nmse_clean:.3})']
+    axs[2].legend(
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
+        labels=legend_labels, framealpha=1, loc='best')
+
+    # Plot MI
+    bplot_mi = axs[3].boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2, 3, 4],
+                              widths=0.5, showfliers=False)
+    axs[3].set_title('Mutual Information (MI) Comparison', fontsize=14)
+    axs[3].set_ylabel('MI', fontsize=12)
+    axs[3].set_xticks([1, 2, 3, 4])
+    axs[3].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    axs[3].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    axs[3].yaxis.set_minor_locator(MultipleLocator(0.1))
+    # Add legend
+    # Calculate mean MI for each comparison
+    mean_mi_picard = np.mean(mi_values[:, 0])
+    mean_mi_SSP = np.mean(mi_values[:, 1])
+    mean_mi_clean_raw = np.mean(mi_values[:, 2])
+    mean_mi_clean_asr = np.mean(mi_values[:, 3])
+    legend_labels = [f'Picard (Mean MI: {mean_mi_picard:.2f})', f'SSP (Mean MI: {mean_mi_SSP:.2f})',
+                     f'ASR (Mean MI: {mean_mi_clean_raw:.2f})', f'MASR (Mean MI: {mean_mi_clean_asr:.2f})']
+    axs[3].legend(
+        handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
+                 plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
+        labels=legend_labels, framealpha=1, loc='best')
+
+    # Set box colors
+    for bplot in [bplot_rmse, bplot_snr, bplot_nmse, bplot_mi]:
+        for patch, color in zip(bplot['boxes'], ['#829CBC', '#6290C8', '#376996', '#1F487E']):
             patch.set_facecolor(color)
             patch.set_edgecolor('black')
 
