@@ -7,19 +7,15 @@ import numpy as np
 from asrpy import ASR
 from matplotlib import patches
 from matplotlib.colors import LinearSegmentedColormap
-from mne.preprocessing import ICA, create_eog_epochs, compute_proj_eog
+from mne.preprocessing import ICA
 from scipy.stats import pearsonr
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import MaxAbsScaler, MinMaxScaler
 from joblib import Parallel, delayed
-from scipy.stats import norm
 import analyze_merits
 import tse
 import pandas as pd
 import time
-from scipy.cluster.hierarchy import dendrogram, linkage
-
-matplotlib.use('TkAgg')
 
 
 def wpd(data, max_level):
@@ -398,9 +394,6 @@ def plot_cutoff_w_over_iterations(combined_features):
     ax.set_xlabel('Iteration')
     ax.set_ylabel('Channel Significance')
     ax.set_title('Coefficient of Variation and Channel Significance Over Iterations')
-
-    # Add a horizontal line at y=0.5 to indicate the threshold
-    ax.axhline(y=0.5, color='g', linestyle='--')
 
     # Use the TkAgg backend for matplotlib
     matplotlib.use('TkAgg')
