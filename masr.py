@@ -212,91 +212,106 @@ def TPW(data, cutoff_w):
     cutoff_w (int): The updated value of cutoff_w after processing.
     """
     tsedata = np.mean(data, axis=0)
-    num_channels = 25
     num_rows = 22
     num_cols = 3
+    # channels = raw_gdf.ch_names
     channels = [
         'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
         'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
         'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
         'P1', 'Pz', 'P2', 'POz', 'EOG-left', 'EOG-central', 'EOG-right'
     ]
+    # Dictionary to store transfer entropy results
+
+    # Compute Transfer Entropy for all channel pairs
+    num_channels = 25
     tse_matrix = np.zeros((num_channels, num_channels))
 
-    for i in range(num_rows):
-        for j in range(num_channels - num_cols, num_channels):
-            if i != j:
+    for i, source_channel in enumerate(channels[:num_rows]):
+        for j, target_channel in enumerate(channels[-num_cols:]):
+            if i != j:  # 避免计算通道自身的转递熵
                 try:
                     embedding_dim = 6
                     tau = 1
-                    fl1 = 0
-                    fl2 = 100
-                    tse_value = tse.calculate_transfer_spectral_entropy(tsedata[i], tsedata[j], embedding_dim, tau, fl1,
-                                                                        fl2)
+                    fl1 = 0  # 频带起始索引
+                    fl2 = 100  # 频带结束索引，需根据实际频率点调整
+                    tse_value = tse.calculate_transfer_spectral_entropy(tsedata[i],
+                                                                        tsedata[j],
+                                                                        embedding_dim, tau, fl1, fl2)
+                    # 存储转递熵值到矩阵中
                     tse_matrix[i, j] = tse_value
                 except Exception as e:
-                    print(f"Error computing Transfer Spectral Entropy: {e}")
-    sub_matrix = tse_matrix[:22, -3:]
-    scaler = MinMaxScaler()
-    normalized_sub_matrix = scaler.fit_transform(sub_matrix)
-    offset = 0.01
-    normalized_sub_matrix += offset
-    normalized_sub_matrix = np.clip(normalized_sub_matrix, 0, 1)
-    tse_matrix[:22, -3:] = normalized_sub_matrix
-    fmin, fmax = 0.5, 100
-    n_fft = 1125
-    n_per_seg = 256
-    num_channels = 25
+                    print(f"Error computing Transfer Spectral Entropy from {source_channel} to {target_channel}: {e}")
+    # plot_heatmap(tse_matrix, 'Transfer Spectral Entropy', 'Transfer Spectral Entropy Matrix', num_channels, channels)
+    # 使用热图表示转递谱熵矩阵
+    # 假设 epochs 是已经预加载的mne.Epochs对象
+    # 设置感兴趣的频率范围
+    fmin, fmax = 0.5, 100  # Hz
+    n_fft = 1125  # FFT的窗口大小，减小以匹配数据长度
+    n_per_seg = 256  # 每个段的长度，确保小于epoch的时间点数
+
+    # 我们需要手动提取每个通道的数据
+    num_channels = 25  # 假设我们有25个通道
+
+    # 初始化一个矩阵来存储PSD相似度结果
     psd_similarities = np.zeros((num_channels, num_channels))
+
+    # 计算每个通道的平均PSD
     psds_dict = {}
     for ch_idx in range(num_channels):
         ch_name = channels[ch_idx]
+        # 提取单个通道的数据
         ch_data = data[:, ch_idx]
-        psd, freqs = mne.time_frequency.psd_array_welch(ch_data, 250, fmin=fmin, fmax=fmax, n_fft=n_fft,
+        # 计算PSD
+        psd, freqs = mne.time_frequency.psd_array_welch(ch_data, 250, fmin=fmin, fmax=fmax,
+                                                        n_fft=n_fft,
                                                         n_per_seg=n_per_seg, verbose=False)
+        # 计算所有epochs的平均PSD并存储
         psds_dict[ch_name] = psd.mean(axis=0)
+
+    # 计算所有通道对之间的PSD相似度
     for i in range(num_rows):
         channel_i = channels[i]
-        for j in range(num_channels - num_cols, num_channels):
+        for j in range(num_channels - num_cols, num_channels):  # 使用i+1开始，避免重复计算和自我比较
             channel_j = channels[j]
+            # 计算两个通道之间PSD的相似度
             corr_coef, _ = pearsonr(psds_dict[channel_i], psds_dict[channel_j])
             psd_similarities[i, j] = corr_coef
-            psd_similarities[j, i] = corr_coef
-    sub_matrix = psd_similarities[:22, -3:]
-    scaler = MinMaxScaler()
-    normalized_sub_matrix = scaler.fit_transform(sub_matrix)
-    offset = 0.01
-    normalized_sub_matrix += offset
-    normalized_sub_matrix = np.clip(normalized_sub_matrix, 0, 1)
-    psd_similarities[:22, -3:] = normalized_sub_matrix
-    max_level = 3
+            psd_similarities[j, i] = corr_coef  # 使矩阵对称
+    # plot_heatmap(psd_similarities, 'PSD Similarities', 'PSD Matrix', num_channels, channels)
+    # # 可视化PSD相似度矩阵
+    max_level = 3  # 设置小波包分解的最大层数
+    # wpd_plt(tsedata[:, 1], max_level)
     wpd_similarities = np.zeros((num_channels, num_channels))
     for i in range(num_rows):
         for j in range(num_channels - num_cols, num_channels):
             wpd_i = wpd(data[:, i], max_level)
+
             wpd_j = wpd(data[:, j], max_level)
+            # 假设我们只对特定的节点感兴趣，例如：第三层的所有节点
             nodes_i = [node.path for node in wpd_i.get_level(max_level, 'freq')]
             nodes_j = [node.path for node in wpd_j.get_level(max_level, 'freq')]
+            # 计算这些节点的特征相似度
             sim_values = []
             for path in nodes_i:
-                if path in nodes_j:
+                if path in nodes_j:  # 确保两个通道都有该节点
+                    # Assuming that wpd_i[path].data and wpd_j[path].data are 2D with shape (observations, features)
                     num_features = wpd_i[path].data.shape[1]
                     correlations = np.zeros(num_features)
                     for feature_idx in range(num_features):
                         feature_data_i = wpd_i[path].data[:, feature_idx]
                         feature_data_j = wpd_j[path].data[:, feature_idx]
                         correlations[feature_idx], _ = pearsonr(feature_data_i, feature_data_j)
-                    sim = np.mean(correlations)
+
+                    # Now you have the correlation for each feature between the two channels
+                    sim = np.mean(correlations)  # If you want the average correlation across all features
+
                     sim_values.append(sim)
+            # 用平均相似度作为通道i和j之间的WPD相似度
             wpd_similarities[i, j] = np.mean(sim_values)
-            wpd_similarities[j, i] = wpd_similarities[i, j]
-    sub_matrix = wpd_similarities[:22, -3:]
-    scaler = MinMaxScaler()
-    normalized_sub_matrix = scaler.fit_transform(sub_matrix)
-    offset = 0.01
-    normalized_sub_matrix += offset
-    normalized_sub_matrix = np.clip(normalized_sub_matrix, 0, 1)
-    wpd_similarities[:22, -3:] = normalized_sub_matrix
+            wpd_similarities[j, i] = wpd_similarities[i, j]  # 保持矩阵对称性
+    # 可视化WPD相似度矩阵
+    # plot_heatmap(wpd_similarities, 'WPD Similarities', 'WPD Matrix', num_channels, channels)
     features_TSE_EOG = tse_matrix[:22, -3:]
     features_PSD_EOG = psd_similarities[:22, -3:]
     features_WPD_EOG = wpd_similarities[:22, -3:]
@@ -308,7 +323,7 @@ def TPW(data, cutoff_w):
     if calculate_cv(min_max_scaled) > 0.5:
         print(calculate_cv(min_max_scaled))
         cutoff_w += 1
-    return transformed_features, cutoff_w
+    return transformed_features, 0.25 * cutoff_w
 
 
 def pca_TPW(data):
@@ -323,7 +338,7 @@ def pca_TPW(data):
     cutoff_w (int): The sum of cutoff group widths from each iteration.
     """
     # Split the data into multiple parts for parallel processing
-    num_splits = 5
+    num_splits = 20
     data_splits = np.array_split(data, num_splits)
 
     # Apply TPW method in parallel for each data split
@@ -333,7 +348,7 @@ def pca_TPW(data):
     combined_features, cutoff_ws = zip(*all_results)
 
     # Plot the cutoff group width over iterations
-    plot_cutoff_w_over_iterations(combined_features)
+    # plot_cutoff_w_over_iterations(combined_features)
 
     # Calculate the average feature
     combined_features = np.mean(combined_features, axis=0)
@@ -370,7 +385,7 @@ def plot_cutoff_w_over_iterations(combined_features):
     None. The function generates a violin plot using seaborn library to visualize the CV and channel significance.
     """
     cv_values = []
-    for i in range(5):
+    for i in range(20):
         scaler = MinMaxScaler()
         min_max_scaled = scaler.fit_transform(combined_features[i])
         cv_value = calculate_cv(min_max_scaled)
@@ -378,7 +393,7 @@ def plot_cutoff_w_over_iterations(combined_features):
 
     # Reshape the data into a DataFrame for easier plotting
     data_list = []
-    for i in range(5):
+    for i in range(20):
         df = pd.DataFrame(combined_features[i])
         df['Iteration'] = i + 1
         data_list.append(df)
@@ -618,4 +633,4 @@ def masr_test(filename):
 
 
 if __name__ == '__main__':
-    masr_test("dataset/s6/A06T.gdf")
+    masr_test("dataset/s7/A07T.gdf")
