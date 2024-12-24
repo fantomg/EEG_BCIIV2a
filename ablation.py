@@ -70,8 +70,8 @@ def get_epochs(raw_gdf, events, events_id):
     # 选择范围为Cue后 1s - 4s 的数据
     tmin, tmax = 1.5, 5.995
     # 四类 MI 对应的 events_id
-    events_id = dict({'769': 7, '770': 8})
-    # events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
+    # events_id = dict({'769': 7, '770': 8})
+    events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
 
     epochs = mne.Epochs(raw_gdf, events, events_id, tmin, tmax, proj=True, baseline=None, preload=True,
                         event_repeated='drop')
@@ -289,7 +289,7 @@ def TPW(data, cutoff_w, mode):
 
         # 确保所有值在0到1之间
         normalized_sub_matrix1 = np.clip(normalized_sub_matrix, 0, 1)
-        # print(features_PSD_EOG)
+        print(features_PSD_EOG)
         features_list.append(normalized_sub_matrix1)
 
     if mode in [3, 5, 6, 7]:
@@ -327,7 +327,7 @@ def TPW(data, cutoff_w, mode):
 
         # 确保所有值在0到1之间
         normalized_sub_matrix2 = np.clip(normalized_sub_matrix, 0, 1)
-        print(normalized_sub_matrix2)
+        # print(normalized_sub_matrix2)
         features_list.append(normalized_sub_matrix2)
 
     # 将所有选定的特征拼接成一个特征矩阵
@@ -647,7 +647,7 @@ def asr_test(filename, training):
         normal_asr = cleaned_avg1.get_data(copy=True)
         picard_eeg = cleaned_avg2.get_data(copy=True)
         fastica_eeg = cleaned_avg3.get_data(copy=True)
-        analyze_merits.compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, fastica_eeg)
+        analyze_merits.compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, fastica_eeg)
 
     else:
         raw_gdf, events, events_id = read_raw_gdf(filename)
@@ -673,4 +673,4 @@ def asr_test(filename, training):
     return cleand_data, labels
 
 
-asr_test("dataset/s5/A05T.gdf", training=True)
+asr_test("dataset/s3/A03T.gdf", training=True)

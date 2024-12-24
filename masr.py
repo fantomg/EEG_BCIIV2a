@@ -17,6 +17,8 @@ import tse
 import pandas as pd
 import time
 
+from waveform_topo_join import plot_waveform_masr
+
 
 def wpd(data, max_level):
     wp = pywt.WaveletPacket(data=data, wavelet='db1', mode='symmetric', maxlevel=max_level)
@@ -172,8 +174,7 @@ def visualize_channel_importance(transformed_features, channel_names):
     ax.axhline(mean_value_normalized - std_dev_normalized, color='r', linestyle='--', linewidth=2,
                label='Negative Std Dev: {:.2f}'.format(mean_value_normalized - std_dev_normalized))
     ax.set_xlabel('EEG Channel')
-    ax.set_ylabel('Channel Importance (Normalized)')
-    ax.set_title('Channel Importance Influenced by EOG via PCA (Normalized)')
+    ax.set_ylabel('Channel Significance (Normalized)')
     ax.set_xticks([i * (bar_width + spacing) + bar_width / 2 for i in range(len(normalized_features.flatten()))])
     ax.set_xticklabels(channel_names, rotation=45)
     ax.legend()
@@ -323,7 +324,7 @@ def TPW(data, cutoff_w):
     if calculate_cv(min_max_scaled) > 0.5:
         print(calculate_cv(min_max_scaled))
         cutoff_w += 1
-    return transformed_features, 0.25 * cutoff_w
+    return transformed_features, 0.5 * cutoff_w
 
 
 def pca_TPW(data):
@@ -338,7 +339,7 @@ def pca_TPW(data):
     cutoff_w (int): The sum of cutoff group widths from each iteration.
     """
     # Split the data into multiple parts for parallel processing
-    num_splits = 20
+    num_splits = 12
     data_splits = np.array_split(data, num_splits)
 
     # Apply TPW method in parallel for each data split
@@ -348,7 +349,7 @@ def pca_TPW(data):
     combined_features, cutoff_ws = zip(*all_results)
 
     # Plot the cutoff group width over iterations
-    # plot_cutoff_w_over_iterations(combined_features)
+    plot_cutoff_w_over_iterations(combined_features)
 
     # Calculate the average feature
     combined_features = np.mean(combined_features, axis=0)
@@ -382,10 +383,10 @@ def plot_cutoff_w_over_iterations(combined_features):
         The shape of the array is (5, n_channels, n_features), where 5 represents the number of iterations.
 
     Returns:
-    None. The function generates a violin plot using seaborn library to visualize the CV and channel significance.
+    None. The function generates a violin plot using the seaborn library to visualize the CV and channel significance.
     """
     cv_values = []
-    for i in range(20):
+    for i in range(12):
         scaler = MinMaxScaler()
         min_max_scaled = scaler.fit_transform(combined_features[i])
         cv_value = calculate_cv(min_max_scaled)
@@ -393,22 +394,24 @@ def plot_cutoff_w_over_iterations(combined_features):
 
     # Reshape the data into a DataFrame for easier plotting
     data_list = []
-    for i in range(20):
+    for i in range(12):
         df = pd.DataFrame(combined_features[i])
-        df['Iteration'] = i + 1
+        df['Segments'] = i + 1
         data_list.append(df)
     combined_df = pd.concat(data_list, ignore_index=True)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7, 4))
 
     # Create a violin plot using seaborn
-    sns.violinplot(data=combined_df, x='Iteration', y=combined_df.columns[0], hue='Iteration',
+    sns.violinplot(data=combined_df, x='Segments', y=combined_df.columns[0], hue='Segments',
                    inner="point", bw_adjust=cv_values[0], density_norm='width', palette="Set3", ax=ax)
 
     # Set the labels and title of the plot
-    ax.set_xlabel('Iteration')
+    ax.set_xlabel('Segments')
     ax.set_ylabel('Channel Significance')
-    ax.set_title('Coefficient of Variation and Channel Significance Over Iterations')
+
+    # Adjust the legend to be on the outside of the plot
+    ax.legend(title='Segments', loc='center left', bbox_to_anchor=(1, 0.5))
 
     # Use the TkAgg backend for matplotlib
     matplotlib.use('TkAgg')
@@ -420,7 +423,7 @@ def plot_cutoff_w_over_iterations(combined_features):
     plt.show()
 
 
-def tpasr(transformed_features, raw_gdf, width):
+def tpasr(transformed_features, raw_gdf, p, width):
     """
     This function applies the TPASR (Temporal and Pseudo-Temporal Artifact Subspace Reconstruction) algorithm to the EEG data.
     TPASR is a method for artifact removal in EEG data that combines temporal and pseudo-temporal artifact subspace
@@ -464,9 +467,9 @@ def tpasr(transformed_features, raw_gdf, width):
     print(high_impact_channels)
 
     # Define ASR parameters for each group
-    asr_params_low = {'cutoff': 20 + width + width, 'max_bad_chans': 0.3}
-    asr_params_medium = {'cutoff': 20 + width, 'max_bad_chans': 0.2}
-    asr_params_high = {'cutoff': 20, 'max_bad_chans': 0.2}
+    asr_params_low = {'cutoff': p + width + width, 'max_bad_chans': 0.2}
+    asr_params_medium = {'cutoff': p + width, 'max_bad_chans': 0.2}
+    asr_params_high = {'cutoff': p, 'max_bad_chans': 0.2}
 
     # Create a new Raw object to avoid modifying the original data
     eeg_processed = raw_gdf.copy()
@@ -504,7 +507,7 @@ def init_asr(raw_gdf):
     allowed percentage of bad channels) and applies the ASR transformation to the raw EEG data.
     """
     # Use ASR to process data, here we don't group the channels, cutoff is set to 20
-    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.2)
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=15, max_bad_chans=0.2)
     # Train the ASR
     asr.fit(raw_gdf)
     # Apply ASR transformation
@@ -513,36 +516,7 @@ def init_asr(raw_gdf):
     return raw_processed
 
 
-def plot_asr(epochs, cleaned_avg, channel_names):
-    """
-    Plots the average EEG waveforms before and after ASR processing.
-
-    Parameters:
-    epochs (mne.Epochs): The EEG epochs object containing raw data.
-    cleaned_avg (mne.Epochs): The EEG epochs object containing cleaned data after ASR processing.
-    channel_names (list): The list of EEG channel names.
-
-    Returns:
-    None. The function displays the average EEG waveforms using matplotlib.
-    """
-    # Load or create channel position information
-    montage = mne.channels.make_standard_montage('standard_1020')
-
-    # Now you can try plotting again, this time with spatial colors enabled
-    evoked1 = epochs.average(picks=channel_names)
-    evoked1.set_montage(montage)
-    # evoked1.plot(spatial_colors=True, titles="Before ASR")
-
-    cleaned_avg.set_montage(montage)
-    evoked2 = cleaned_avg.average()
-    # evoked2.plot(spatial_colors=True, titles="After ASR")
-
-    difference_evoked = mne.combine_evoked([evoked1, evoked2], weights=[1, -1])
-    # Use plot method to plot the difference waveforms
-    difference_evoked.plot(spatial_colors=True, gfp=True, titles="Waveform Differences (Raw signal - After ASR)")
-
-
-def masr_test(filename):
+def masr_test(filename, p):
     """
     This function performs artifact removal and artifact detection on EEG data using various methods.
 
@@ -554,6 +528,7 @@ def masr_test(filename):
     labels (ndarray): The labels corresponding to the events in the EEG data.
     """
     raw_gdf, events, events_id = read_raw_gdf(filename)
+    # print(events_id)
     channel_names = [
         'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
         'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
@@ -567,7 +542,7 @@ def masr_test(filename):
     total_time = end_time - start_time  # Calculate total time
     print(f"relation time：{total_time:.2f}秒")
     start_time = time.time()
-    raw_processed = tpasr(transformed_features, raw_gdf, width)
+    raw_processed = tpasr(transformed_features, raw_gdf, p, width)
     end_time = time.time()  # Record end time
     total_time = end_time - start_time  # Calculate total time
     print(f"MASR time：{total_time:.2f}秒")
@@ -587,7 +562,7 @@ def masr_test(filename):
 
     # Apply ICA to remove artifact components
     raw_processed2 = ica1.apply(raw_gdf.copy())
-
+    ica1.plot_scores(scores)
     # Create EOG artifact events and calculate average EOG artifact response
     eog_epochs = mne.preprocessing.create_eog_epochs(raw_gdf)
     eog_evoked = eog_epochs.average()
@@ -598,8 +573,8 @@ def masr_test(filename):
     eog_projs, _ = mne.preprocessing.compute_proj_eog(raw_ssp, n_grad=1, n_mag=1, n_eeg=1)
 
     # Check generated projection objects
-    print(f"Type of eog_projs: {type(eog_projs)}")
-    print(f"First element type: {type(eog_projs[0])}")
+    # print(f"Type of eog_projs: {type(eog_projs)}")
+    # print(f"First element type: {type(eog_projs[0])}")
 
     # Add EOG projection vectors to raw data
     raw_ssp.add_proj(eog_projs)
@@ -615,12 +590,8 @@ def masr_test(filename):
                               picks=channel_names, event_repeated="drop")
     cleaned_avg3 = mne.Epochs(raw_processed3, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
                               picks=channel_names, event_repeated="drop")
-    plot_asr(epochs, cleaned_avg, channel_names)
-    plot_asr(epochs, cleaned_avg1, channel_names)
-    plot_asr(epochs, cleaned_avg2, channel_names)
-    plot_asr(epochs, cleaned_avg3, channel_names)
+    plot_waveform_masr(epochs, cleaned_avg, cleaned_avg1, cleaned_avg2, cleaned_avg3, channel_names)
     cleand_data = cleaned_avg.get_data(copy=True)
-    # print(f"Epochs(After): {cleand_data.shape}")
     labels = cleaned_avg.events[:, -1] - 7
     # print(f"labels(After): {labels}")
     raw_data_selected_channels = epochs.get_data(copy=True)[:, :22, :]
@@ -633,4 +604,4 @@ def masr_test(filename):
 
 
 if __name__ == '__main__':
-    masr_test("dataset/s7/A07T.gdf")
+    masr_test("dataset/s2/A02T.gdf", 20)

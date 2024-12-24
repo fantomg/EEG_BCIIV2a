@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import MultipleLocator
 
+from radar_plot import compare_metrics_radar
+
 matplotlib.use('TkAgg')
 
 from sklearn.metrics import mutual_info_score
@@ -570,7 +572,7 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
         mi_values[i, 3] = mutual_info_score(disc_cleaned, disc_raw)
 
     # Create subplots
-    fig, axs = plt.subplots(4, 1, figsize=(8, 14))
+    fig, axs = plt.subplots(4, 1, figsize=(7, 14))
 
     # Plot RMSE
     bplot_rmse = axs[0].boxplot([rmse_picard, rmse_SSP, rmse_normal_asr, rmse_clean], patch_artist=True,
@@ -674,127 +676,9 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     # Adjust layout and display plot
     plt.tight_layout()
     plt.show()
-    compare_metrics3(
+    compare_metrics_radar(
         np.mean(rmse_clean), np.mean(rmse_normal_asr), np.mean(rmse_picard), np.mean(rmse_SSP),
         np.mean(nmse_clean), np.mean(nmse_normal_asr), np.mean(nmse_picard), np.mean(nmse_SSP),
         np.mean(snr_db), np.mean(normal_asr_snr_db), np.mean(picard_snr_db), np.mean(SSP_snr_db),
         np.mean(mi_values[:, 3]), np.mean(mi_values[:, 2]), np.mean(mi_values[:, 0]), np.mean(mi_values[:, 1])
     )
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-def compare_metrics2(rmse_values, nmse_values, snr_values, mi_values):
-    """
-    绘制四种方法的雷达图，表示四个指标（1/RMSE、1/NMSE、SNR、MI）。
-    参数：
-    rmse_values : list or numpy.ndarray
-        各方法的RMSE值列表。
-    nmse_values : list or numpy.ndarray
-        各方法的NMSE值列表。
-    snr_values : list or numpy.ndarray
-        各方法的SNR值列表。
-    mi_values : list or numpy.ndarray
-        各方法的MI值列表。
-    """
-
-    # 1. 计算指标的倒数或直接值
-    inv_rmse = 1 / np.array(rmse_values)
-    inv_nmse = 1 / np.array(nmse_values)
-    snr = np.array(snr_values)
-    mi = np.array(mi_values)
-
-    # 2. 数据归一化
-    all_metrics = np.array([inv_rmse, inv_nmse, snr, mi])
-
-    # 添加偏移量以避免过小的值
-    offset = 0.5  # 偏移量，可调整
-    adjusted_metrics = all_metrics + offset
-
-    # 使用非线性变换（如平方根）增强可视化
-    transformed_metrics = np.sqrt(adjusted_metrics)
-
-    # 计算最大和最小值进行归一化
-    min_value = np.min(transformed_metrics)
-    max_value = np.max(transformed_metrics)
-
-    norm_metrics = (transformed_metrics - min_value) / (max_value - min_value + 1e-10)  # 正规化
-
-    # 3. 雷达图标签设置
-    methods = ['Picard', 'SSP', 'ASR', 'MASR']
-    labels = ['1/RMSE', '1/NMSE', 'SNR', 'MI']
-    num_vars = len(labels)
-
-    # 4. 雷达图布局设置
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    norm_metrics = np.concatenate((norm_metrics, norm_metrics[:, [0]]), axis=1)  # 确保图形闭合
-    angles += angles[:1]
-
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-
-    # 5. 绘制每种方法的雷达图线
-    for idx, method in enumerate(methods):
-        ax.plot(angles, norm_metrics[idx], linewidth=2, label=method)
-        ax.fill(angles, norm_metrics[idx], alpha=0.5)
-
-    # 6. 添加标签和标题
-    ax.set_yticklabels([])
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels)
-    ax.set_title("Methods Comparison on RMSE, NMSE, SNR, and MI", va='bottom')
-    ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.1))
-
-    # 显示图形
-    plt.show()
-
-
-def compare_metrics3(rmse_clean, rmse_normal_asr, rmse_picard, rmse_SSP,
-                     nmse_clean, nmse_normal_asr, nmse_picard, nmse_SSP,
-                     snr_clean, snr_normal_asr, snr_picard, snr_SSP,
-                     mi_clean, mi_normal_asr, mi_picard, mi_SSP):
-    """
-    绘制四种方法的雷达图，表示四个指标（1/RMSE、1/NMSE、SNR、MI）。
-    参数：
-    - rmse_clean, rmse_normal_asr, rmse_picard, rmse_SSP: RMSE值。
-    - nmse_clean, nmse_normal_asr, nmse_picard, nmse_SSP: NMSE值。
-    - snr_clean, snr_normal_asr, snr_picard, snr_SSP: SNR值。
-    - mi_clean, mi_normal_asr, mi_picard, mi_SSP: MI值。
-    """
-
-    # 1. 将每种方法的四个指标组合在一起
-    methods_metrics = {
-        'Clean': [1 / rmse_clean, 1 / nmse_clean, snr_clean, mi_clean],
-        'ASR': [1 / rmse_normal_asr, 1 / nmse_normal_asr, snr_normal_asr, mi_normal_asr],
-        'Picard': [1 / rmse_picard, 1 / nmse_picard, snr_picard, mi_picard],
-        'SSP': [1 / rmse_SSP, 1 / nmse_SSP, snr_SSP, mi_SSP]
-    }
-
-    # 2. 数据归一化
-    metrics = np.array(list(methods_metrics.values()))
-    norm_metrics = (metrics - metrics.min(axis=0)) / (metrics.max(axis=0) - metrics.min(axis=0) + 1e-10)
-
-    # 3. 设置雷达图参数
-    labels = ['1/RMSE', '1/NMSE', 'SNR', 'MI']
-    num_vars = len(labels)
-    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1]
-    norm_metrics = np.concatenate((norm_metrics, norm_metrics[:, [0]]), axis=1)
-
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-
-    # 4. 绘制每种方法的雷达图线
-    for i, (method, values) in enumerate(methods_metrics.items()):
-        ax.plot(angles, norm_metrics[i], linewidth=1.5, label=method)
-        ax.fill(angles, norm_metrics[i], alpha=0.25)
-
-    # 5. 添加标签和标题
-    ax.set_yticklabels([])
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels)
-    ax.set_title("Methods Comparison on RMSE, NMSE, SNR, and MI", va='bottom')
-    ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.1))
-
-    # 显示图形
-    plt.show()
