@@ -1,9 +1,8 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import gridspec
 from matplotlib.ticker import MultipleLocator
-
-from radar_plot import compare_metrics_radar
 
 matplotlib.use('TkAgg')
 
@@ -514,7 +513,7 @@ def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, picard_
 def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, SSP_eeg, sfreq=250, fmin=0.5,
                      fmax=100):
     """
-    绘制处理后数据及另一个数据集的归一化均方误差（NMSE）、均方根误差（RMSE）、信噪比（SNR）和互信息（MI）的箱形图。
+    绘制处理后数据及另一个数据集的归一化均方误差（NMSE）、均方根误差（RMSE）、信噪比（SAR）和互信息（MI）的箱形图。
     参数：
     cleand_data : numpy.ndarray
         处理后的数据数组。
@@ -536,7 +535,7 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     rmse_normal_asr = calculate_rmse(normal_asr, raw_data_selected_channels)
     rmse_picard = calculate_rmse(picard_eeg, raw_data_selected_channels)
     rmse_SSP = calculate_rmse(SSP_eeg, raw_data_selected_channels)
-    # Calculate SNR
+    # Calculate SAR
     signal_power = calculate_power(cleand_data, sfreq, fmin, fmax)
     noise_power = calculate_power(cleand_data - raw_data_selected_channels, sfreq, fmin, fmax)
     snr_linear = signal_power / (noise_power + 1e-10)
@@ -572,17 +571,31 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
         mi_values[i, 3] = mutual_info_score(disc_cleaned, disc_raw)
 
     # Create subplots
-    fig, axs = plt.subplots(4, 1, figsize=(7, 14))
+    # fig, axs = plt.subplots(4, 1, figsize=(7, 14))
+
+    # 创建 2x8 网格布局
+    fig = plt.figure(figsize=(14, 8))
+    gs = gridspec.GridSpec(4, 10, figure=fig)
+
+    # 合并第一行格子 1-4 和 5-8
+    ax1 = fig.add_subplot(gs[0:2, 0:4])  # 单模态
+    ax2 = fig.add_subplot(gs[0:2, 6:10])  # 双模态
+
+    # 合并第二行格子 3-6
+    ax3 = fig.add_subplot(gs[1:3, 4:6], polar=True)  # 三模态，合并格子3-6
+    ax4 = fig.add_subplot(gs[2:4, 0:4])  # 三模态，合并格子3-6
+    ax5 = fig.add_subplot(gs[2:4, 6:10])  # 三模态，合并格子3-6
 
     # Plot RMSE
-    bplot_rmse = axs[0].boxplot([rmse_picard, rmse_SSP, rmse_normal_asr, rmse_clean], patch_artist=True,
-                                showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
-    axs[0].set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=14)
-    axs[0].set_ylabel('RMSE', fontsize=12)
-    axs[0].set_xticks([1, 2, 3, 4])
-    axs[0].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
-    axs[0].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
-    axs[0].yaxis.set_minor_locator(MultipleLocator(0.1))
+    bplot_rmse = ax1.boxplot([rmse_picard, rmse_SSP, rmse_normal_asr, rmse_clean], patch_artist=True,
+                             showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    ax1.set_title('Root Mean Squared Error (RMSE) Comparison', fontsize=10)
+    ax1.set_ylabel('RMSE', fontsize=12)
+    ax1.set_xticks([1, 2, 3, 4])
+    ax1.set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    ax1.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax1.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax1.grid(True, linestyle='--', alpha=0.7)
     # Calculate mean RMSE for each dataset
     mean_rmse_clean = np.mean(rmse_clean)
     mean_rmse_normal_asr = np.mean(rmse_normal_asr)
@@ -590,27 +603,28 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     mean_rmse_SSP = np.mean(rmse_SSP)
     legend_labels = [f'Picard (Mean: {mean_rmse_picard:.3})', f'SSP (Mean: {mean_rmse_SSP:.3})',
                      f'ASR (Mean: {mean_rmse_normal_asr:.3})', f'MASR (Mean: {mean_rmse_clean:.3})']
-    axs[0].legend(
+    ax1.legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
                  plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
         labels=legend_labels, framealpha=1, loc='best')
 
-    # Plot SNR
-    bplot_snr = axs[1].boxplot([picard_snr_db, SSP_snr_db, normal_asr_snr_db, snr_db], patch_artist=True,
-                               showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
-    axs[1].set_title('Signal to Noise Ratio (SNR) Comparison', fontsize=14)
-    axs[1].set_ylabel('SNR (dB)', fontsize=12)
-    axs[1].set_xticks([1, 2, 3, 4])
-    axs[1].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
-    axs[1].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
-    axs[1].yaxis.set_minor_locator(MultipleLocator(0.1))
+    # Plot SAR
+    bplot_snr = ax2.boxplot([picard_snr_db, SSP_snr_db, normal_asr_snr_db, snr_db], patch_artist=True,
+                            showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    ax2.set_title('Signal to Artifact Ratio (SAR) Comparison', fontsize=10)
+    ax2.set_ylabel('SAR (dB)', fontsize=12)
+    ax2.set_xticks([1, 2, 3, 4])
+    ax2.set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    ax2.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax2.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax2.grid(True, linestyle='--', alpha=0.7)
     mean_snr_asr = np.mean(snr_db)
     mean_snr_normal_asr = np.mean(normal_asr_snr_db)
     mean_picard_snr_db = np.mean(picard_snr_db)
     mean_SSP_snr_db = np.mean(SSP_snr_db)
     legend_labels = [f'Picard (Mean: {mean_picard_snr_db:.3})', f'SSP (Mean: {mean_SSP_snr_db:.3})',
                      f'ASR (Mean: {mean_snr_normal_asr:.3})', f'MASR (Mean: {mean_snr_asr:.3})']
-    axs[1].legend(
+    ax2.legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
                  plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
         labels=legend_labels, framealpha=1, loc='best')
@@ -621,14 +635,15 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     nmse_picard = calculate_nmse(picard_eeg, raw_data_selected_channels)
     nmse_SSP = calculate_nmse(SSP_eeg, raw_data_selected_channels)
 
-    bplot_nmse = axs[2].boxplot([nmse_picard, nmse_SSP, nmse_normal_asr, nmse_clean], patch_artist=True,
-                                showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
-    axs[2].set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=14)
-    axs[2].set_ylabel('NMSE', fontsize=12)
-    axs[2].set_xticks([1, 2, 3, 4])
-    axs[2].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
-    axs[2].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
-    axs[2].yaxis.set_minor_locator(MultipleLocator(0.1))
+    bplot_nmse = ax4.boxplot([nmse_picard, nmse_SSP, nmse_normal_asr, nmse_clean], patch_artist=True,
+                             showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    ax4.set_title('Normalized Mean Squared Error (NMSE) Comparison', fontsize=10)
+    ax4.set_ylabel('NMSE', fontsize=12)
+    ax4.set_xticks([1, 2, 3, 4])
+    ax4.set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    ax4.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax4.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax4.grid(True, linestyle='--', alpha=0.7)
     # 计算每个数据集的平均NMSE
     mean_nmse_clean = np.mean(nmse_clean)
     mean_nmse_normal_asr = np.mean(nmse_normal_asr)
@@ -636,20 +651,21 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     mean_SSP_snr_db = np.mean(nmse_SSP)
     legend_labels = [f'Picard (Mean: {mean_picard_snr_db:.3})', f'SSP (Mean: {mean_SSP_snr_db:.3})',
                      f'ASR (Mean: {mean_nmse_normal_asr:.3})', f'MASR (Mean: {mean_nmse_clean:.3})']
-    axs[2].legend(
+    ax4.legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
                  plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
         labels=legend_labels, framealpha=1, loc='best')
 
     # Plot MI
-    bplot_mi = axs[3].boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2, 3, 4],
-                              widths=0.5, showfliers=False)
-    axs[3].set_title('Mutual Information (MI) Comparison', fontsize=14)
-    axs[3].set_ylabel('MI', fontsize=12)
-    axs[3].set_xticks([1, 2, 3, 4])
-    axs[3].set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
-    axs[3].xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
-    axs[3].yaxis.set_minor_locator(MultipleLocator(0.1))
+    bplot_mi = ax5.boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2, 3, 4],
+                           widths=0.5, showfliers=False)
+    ax5.set_title('Mutual Information (MI) Comparison', fontsize=10)
+    ax5.set_ylabel('MI', fontsize=12)
+    ax5.set_xticks([1, 2, 3, 4])
+    ax5.set_xticklabels(['Picard', 'SSP', 'ASR', 'MASR'], fontsize=10)
+    ax5.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax5.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax5.grid(True, linestyle='--', alpha=0.7)
     # Add legend
     # Calculate mean MI for each comparison
     mean_mi_picard = np.mean(mi_values[:, 0])
@@ -658,7 +674,7 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     mean_mi_clean_asr = np.mean(mi_values[:, 3])
     legend_labels = [f'Picard (Mean MI: {mean_mi_picard:.2f})', f'SSP (Mean MI: {mean_mi_SSP:.2f})',
                      f'ASR (Mean MI: {mean_mi_clean_raw:.2f})', f'MASR (Mean MI: {mean_mi_clean_asr:.2f})']
-    axs[3].legend(
+    ax5.legend(
         handles=[plt.Rectangle((0, 0), 0.5, 2, color='#829CBC'), plt.Rectangle((0, 0), 0.5, 2, color='#6290C8'),
                  plt.Rectangle((0, 0), 0.5, 2, color='#376996'), plt.Rectangle((0, 0), 0.5, 2, color='#1F487E')],
         labels=legend_labels, framealpha=1, loc='best')
@@ -667,18 +683,66 @@ def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard
     for bplot in [bplot_rmse, bplot_snr, bplot_nmse, bplot_mi]:
         for patch, color in zip(bplot['boxes'], ['#829CBC', '#6290C8', '#376996', '#1F487E']):
             patch.set_facecolor(color)
-            patch.set_edgecolor('black')
-
-    # Show grid lines
-    for ax in axs.flatten():
-        ax.grid(True, linestyle='--', alpha=0.7)
-
-    # Adjust layout and display plot
-    plt.tight_layout()
-    plt.show()
-    compare_metrics_radar(
+            patch.set_edgecolor('black')  # 1. 计算每种方法的平均值并将其作为第五个指标
+    methods_metrics = compare_metrics_radar(
         np.mean(rmse_clean), np.mean(rmse_normal_asr), np.mean(rmse_picard), np.mean(rmse_SSP),
         np.mean(nmse_clean), np.mean(nmse_normal_asr), np.mean(nmse_picard), np.mean(nmse_SSP),
         np.mean(snr_db), np.mean(normal_asr_snr_db), np.mean(picard_snr_db), np.mean(SSP_snr_db),
         np.mean(mi_values[:, 3]), np.mean(mi_values[:, 2]), np.mean(mi_values[:, 0]), np.mean(mi_values[:, 1])
     )
+
+    for method, metrics in methods_metrics.items():
+        average_metric = np.mean(metrics)
+        metrics.append(average_metric)
+
+    # 2. 数据归一化并映射到 [0.2, 0.8] 区间
+    metrics = np.array(list(methods_metrics.values()))
+    min_value = metrics.min(axis=0)
+    max_value = metrics.max(axis=0)
+    norm_metrics = (metrics - min_value) / (max_value - min_value + 1e-10)  # 归一化到 [0, 1]
+
+    # 非线性映射：增加中心分离效果（指数映射）
+    norm_metrics = norm_metrics ** 0.5  # 调整参数以更灵活地控制内外比例
+    norm_metrics = norm_metrics * 0.6 + 0.2  # 再次映射到 [0.2, 0.8] 区间
+
+    # 3. 设置雷达图参数
+    labels = ['1/RMSE', '1/NMSE', 'SAR', 'MI', 'Average']
+    num_vars = len(labels)
+    angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
+    angles += angles[:1]  # 添加第一个角度到最后以闭合
+
+    norm_metrics = np.concatenate((norm_metrics, norm_metrics[:, [0]]), axis=1)
+    # 5. 绘制每种方法的雷达图线
+    for i, (method, values) in enumerate(methods_metrics.items()):
+        ax3.plot(angles, norm_metrics[i], linewidth=1.5, label=method)
+        ax3.fill(angles, norm_metrics[i], alpha=0.5)
+
+    # 6. 设置径向范围并去掉径向刻度标签
+    ax3.set_ylim(0, 1)  # 设置范围从0到1
+    ax3.set_yticklabels([])  # 移除径向刻度数字
+
+    # 设置环绕标签布局并调整标签位置
+    ax3.set_xticks(angles[:-1])
+    ax3.set_xticklabels(labels, ha='center', va='center', fontsize=10)
+    for label in ax3.get_xticklabels():
+        x_pos, y_pos = label.get_position()  # 获取原始位置
+        # 将标签位置的y坐标放大，使其远离中心
+        label.set_position((x_pos, y_pos-0.05))  # 可以调整倍数 1.2 来控制距离
+    ax3.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+
+    # Adjust layout and display plot
+    plt.tight_layout()
+    plt.show()
+
+
+def compare_metrics_radar(rmse_clean, rmse_normal_asr, rmse_picard, rmse_SSP,
+                          nmse_clean, nmse_normal_asr, nmse_picard, nmse_SSP,
+                          snr_clean, snr_normal_asr, snr_picard, snr_SSP,
+                          mi_clean, mi_normal_asr, mi_picard, mi_SSP):
+    methods_metrics = {
+        'MASR': [1 / rmse_clean, 1 / nmse_clean, snr_clean, mi_clean],
+        'ASR': [1 / rmse_normal_asr, 1 / nmse_normal_asr, snr_normal_asr, mi_normal_asr],
+        'Picard': [1 / rmse_picard, 1 / nmse_picard, snr_picard, mi_picard],
+        'SSP': [1 / rmse_SSP, 1 / nmse_SSP, snr_SSP, mi_SSP],
+    }
+    return methods_metrics

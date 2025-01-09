@@ -562,7 +562,6 @@ def masr_test(filename, p):
 
     # Apply ICA to remove artifact components
     raw_processed2 = ica1.apply(raw_gdf.copy())
-    ica1.plot_scores(scores)
     # Create EOG artifact events and calculate average EOG artifact response
     eog_epochs = mne.preprocessing.create_eog_epochs(raw_gdf)
     eog_evoked = eog_epochs.average()
@@ -571,10 +570,6 @@ def masr_test(filename, p):
     raw_ssp = raw_gdf.copy()
     # Compute EOG projection vectors
     eog_projs, _ = mne.preprocessing.compute_proj_eog(raw_ssp, n_grad=1, n_mag=1, n_eeg=1)
-
-    # Check generated projection objects
-    # print(f"Type of eog_projs: {type(eog_projs)}")
-    # print(f"First element type: {type(eog_projs[0])}")
 
     # Add EOG projection vectors to raw data
     raw_ssp.add_proj(eog_projs)
@@ -604,4 +599,4 @@ def masr_test(filename, p):
 
 
 if __name__ == '__main__':
-    masr_test("dataset/s2/A02T.gdf", 20)
+    masr_test("dataset/s5/A05T.gdf", 20)
