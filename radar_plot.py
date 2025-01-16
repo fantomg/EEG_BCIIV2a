@@ -69,9 +69,11 @@ def compare_metrics_radar(rmse_clean, rmse_normal_asr, rmse_picard, rmse_SSP,
     # 显示图形
     plt.show()
 
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+
 
 def plot_modality_radar(metrics_all):
     """
@@ -122,21 +124,25 @@ def plot_modality_radar(metrics_all):
     # 合并第二行格子 3-6
     ax3 = fig.add_subplot(gs[1, 2:6], polar=True)  # 三模态，合并格子3-6
 
+    # 配色定义
+    colors_single = ['#3FA0C0', '#EDB327', '#D85014']  # 单模态配色
+    colors_dual = ['#3FA0C0', '#EDB327', '#D85014']  # 双模态配色
+    colors_triple = ['#3FA0C0']  # 三模态配色
+
     # 绘制每个模态的雷达图
     # 绘制单模态图
     ax1.set_ylim(0, 1)  # 统一范围
     ax1.set_xticks(angles[:-1])
     ax1.set_xticklabels(labels)
     ax1.set_title("Single Modality", size=14, y=1.1)
-    # 移动标签向外
     for label in ax1.get_xticklabels():
         x_pos, y_pos = label.get_position()  # 获取原始位置
         # 将标签位置的y坐标放大，使其远离中心
-        label.set_position((x_pos, y_pos-0.05))  # 可以调整倍数 1.2 来控制距离
-    for method, values in zip(["PSD", "WPD", "TSE"], metrics_single):
+        label.set_position((x_pos, y_pos - 0.05))  # 可以调整倍数 1.2 来控制距离
+    for method, values, color in zip(["PSD", "WPD", "TSE"], metrics_single, colors_single):
         values = np.append(values, values[0])  # 闭合数据点
-        ax1.plot(angles, values, linewidth=1.5, label=method)
-        ax1.fill(angles, values, alpha=0.25)
+        ax1.plot(angles, values, linewidth=1.5, label=method, color=color)
+        ax1.fill(angles, values, alpha=0.25, color=color)
 
     # 绘制双模态图
     ax2.set_ylim(0, 1)
@@ -146,11 +152,11 @@ def plot_modality_radar(metrics_all):
     for label in ax2.get_xticklabels():
         x_pos, y_pos = label.get_position()  # 获取原始位置
         # 将标签位置的y坐标放大，使其远离中心
-        label.set_position((x_pos, y_pos-0.05))  # 可以调整倍数 1.2 来控制距离
-    for method, values in zip(["TSE + PSD", "PSD + WPD", "TSE + WPD"], metrics_dual):
+        label.set_position((x_pos, y_pos - 0.05))  # 可以调整倍数 1.2 来控制距离
+    for method, values, color in zip(["TSE + PSD", "PSD + WPD", "TSE + WPD"], metrics_dual, colors_dual):
         values = np.append(values, values[0])
-        ax2.plot(angles, values, linewidth=1.5, label=method)
-        ax2.fill(angles, values, alpha=0.25)
+        ax2.plot(angles, values, linewidth=1.5, label=method, color=color)
+        ax2.fill(angles, values, alpha=0.25, color=color)
 
     # 绘制三模态图
     ax3.set_ylim(0, 1)
@@ -160,11 +166,11 @@ def plot_modality_radar(metrics_all):
     for label in ax3.get_xticklabels():
         x_pos, y_pos = label.get_position()  # 获取原始位置
         # 将标签位置的y坐标放大，使其远离中心
-        label.set_position((x_pos, y_pos-0.05))  # 可以调整倍数 1.2 来控制距离
-    for method, values in zip(["TSE + PSD + WPD"], metrics_triple):
+        label.set_position((x_pos, y_pos - 0.06))  # 可以调整倍数 1.2 来控制距离
+    for method, values, color in zip(["TSE + PSD + WPD"], metrics_triple, colors_triple):
         values = np.append(values, values[0])
-        ax3.plot(angles, values, linewidth=1.5, label=method)
-        ax3.fill(angles, values, alpha=0.25)
+        ax3.plot(angles, values, linewidth=1.5, label=method, color=color)
+        ax3.fill(angles, values, alpha=0.25, color=color)
 
     # 设置所有子图的图例
     ax1.legend(loc='upper right', bbox_to_anchor=(1.2, 1.1), fontsize=8)
@@ -179,7 +185,6 @@ def plot_modality_radar(metrics_all):
     # 调整布局，增加紧凑感
     plt.tight_layout()
     plt.show()
-
 
 
 # 定义数据（所有单、双、三模态的数据）

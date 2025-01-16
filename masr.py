@@ -507,7 +507,7 @@ def init_asr(raw_gdf):
     allowed percentage of bad channels) and applies the ASR transformation to the raw EEG data.
     """
     # Use ASR to process data, here we don't group the channels, cutoff is set to 20
-    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=15, max_bad_chans=0.2)
+    asr = ASR(sfreq=raw_gdf.info['sfreq'], cutoff=20, max_bad_chans=0.2)
     # Train the ASR
     asr.fit(raw_gdf)
     # Apply ASR transformation
