@@ -522,79 +522,113 @@ def masr_test(filename, p):
 
     Parameters:
     filename (str): The path to the EEG data file.
+    p (int): Parameter for the MASR method.
 
     Returns:
     cleand_data (ndarray): The cleaned EEG data after artifact removal and detection.
     labels (ndarray): The labels corresponding to the events in the EEG data.
     """
+    # 读取原始数据
     raw_gdf, events, events_id = read_raw_gdf(filename)
-    # print(events_id)
     channel_names = [
         'Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
         'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
         'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
         'P1', 'Pz', 'P2', 'POz'
     ]
+
+    # 生成 epochs
     epochs, events_id, data = get_epochs(raw_gdf, events)
-    start_time = time.time()
+
+    # ------------------------- 方法处理 -------------------------
+    # MASR
     transformed_features, width = pca_TPW(data)
-    end_time = time.time()  # Record end time
-    total_time = end_time - start_time  # Calculate total time
-    print(f"relation time：{total_time:.2f}秒")
-    start_time = time.time()
     raw_processed = tpasr(transformed_features, raw_gdf, p, width)
-    end_time = time.time()  # Record end time
-    total_time = end_time - start_time  # Calculate total time
-    print(f"MASR time：{total_time:.2f}秒")
-    start_time = time.time()
+
+    # ASR
     raw_processed1 = init_asr(raw_gdf)
-    end_time = time.time()  # Record end time
-    total_time = end_time - start_time  # Calculate total time
-    print(f"ASR time：{total_time:.2f}秒")
+
+    # ICA (Picard)
     raw_gdf.set_eeg_reference('average', projection=True)
-    # Fit ICA model
     ica1 = ICA(n_components=22, method='picard')
     ica1.fit(raw_gdf)
-
-    # Identify and mark EOG artifacts
-    eog_inds, scores = ica1.find_bads_eog(raw_gdf)  # Find which ICs match the EOG pattern
-    ica1.exclude = eog_inds  # Mark components to be excluded
-
-    # Apply ICA to remove artifact components
+    eog_inds, scores = ica1.find_bads_eog(raw_gdf)
+    ica1.exclude = eog_inds
     raw_processed2 = ica1.apply(raw_gdf.copy())
-    # Create EOG artifact events and calculate average EOG artifact response
-    eog_epochs = mne.preprocessing.create_eog_epochs(raw_gdf)
-    eog_evoked = eog_epochs.average()
-    eog_evoked.plot_joint()
 
+    # SSP
     raw_ssp = raw_gdf.copy()
-    # Compute EOG projection vectors
     eog_projs, _ = mne.preprocessing.compute_proj_eog(raw_ssp, n_grad=1, n_mag=1, n_eeg=1)
-
-    # Add EOG projection vectors to raw data
     raw_ssp.add_proj(eog_projs)
-
-    # Apply projection vectors
     raw_processed3 = raw_ssp.copy().apply_proj()
 
-    cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
-                             picks=channel_names, event_repeated="drop")
-    cleaned_avg1 = mne.Epochs(raw_processed1, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
-                              picks=channel_names, event_repeated="drop")
-    cleaned_avg2 = mne.Epochs(raw_processed2, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
-                              picks=channel_names, event_repeated="drop")
-    cleaned_avg3 = mne.Epochs(raw_processed3, events, events_id, tmin=1.5, tmax=5.995, baseline=None, preload=True,
-                              picks=channel_names, event_repeated="drop")
-    plot_waveform_masr(epochs, cleaned_avg, cleaned_avg1, cleaned_avg2, cleaned_avg3, channel_names)
+    # OTP
+    raw_OTP = raw_gdf.copy()
+    raw_processed4 = mne.preprocessing.oversampled_temporal_projection(raw_OTP)
+    raw_processed4.filter(0.0, 40.0)
+
+    raw_x = raw_gdf.copy()
+    # 步骤2: 增强预处理
+    raw_x.filter(1.0, 40.0, method='iir')  # 带通滤波
+    raw_x.set_eeg_reference('average', projection=True)  # 重参考
+
+    # 步骤3: 创建 Xdawn 专用 Epochs（只选择 EEG 通道）
+    # 这里我们用一个新的事件ID字典（可根据实际数据调整）
+    events_id = dict({'769': 7, '770': 8, '771': 9, '772': 10})
+    tmin, tmax = 1.5, 5.995  # 包含基线期
+    raw_x.pick_types(eeg=True)  # 只选择 EEG 通道
+    epochs_xdawn = mne.Epochs(
+        raw_x, events, events_id, tmin, tmax,
+        baseline=None, preload=True, reject=None, verbose=False
+    )
+
+    # 步骤4: 带正则化的 Xdawn
+    xdawn = mne.preprocessing.Xdawn(
+        n_components=2,
+        correct_overlap='auto',
+        reg=0.2,  # 增大正则化参数
+        signal_cov=None,  # 自动计算信号协方差
+    )
+
+    xdawn.fit(epochs_xdawn)
+
+    # 直接在 epochs_xdawn 上应用 Xdawn
+    epochs_xdawn_denoised = xdawn.apply(epochs_xdawn)
+    # 由于 apply 返回的是一个字典，选择事件 '769' 对应的 Epochs
+    cleaned_avg5 = epochs_xdawn_denoised['769']
+
+    # ------------------------- 生成 Epochs 对象 -------------------------
+    tmin, tmax = 1.5, 5.995  # 时间窗口
+    cleaned_avg = mne.Epochs(raw_processed, events, events_id, tmin=tmin, tmax=tmax,
+                             baseline=None, preload=True, picks=channel_names, event_repeated="drop")
+    cleaned_avg1 = mne.Epochs(raw_processed1, events, events_id, tmin=tmin, tmax=tmax,
+                              baseline=None, preload=True, picks=channel_names, event_repeated="drop")
+    cleaned_avg2 = mne.Epochs(raw_processed2, events, events_id, tmin=tmin, tmax=tmax,
+                              baseline=None, preload=True, picks=channel_names, event_repeated="drop")
+    cleaned_avg3 = mne.Epochs(raw_processed3, events, events_id, tmin=tmin, tmax=tmax,
+                              baseline=None, preload=True, picks=channel_names, event_repeated="drop")
+    cleaned_avg4 = mne.Epochs(raw_processed4, events, events_id, tmin=tmin, tmax=tmax,
+                              baseline=None, preload=True, picks=channel_names, event_repeated="drop")
+    # cleaned_avg5 已由 Xdawn 得到
+
+    # ------------------------- 绘制波形对比 -------------------------
+    plot_waveform_masr(epochs, cleaned_avg, cleaned_avg1, cleaned_avg2, cleaned_avg3, cleaned_avg4, cleaned_avg5,
+                       channel_names)
+
+    # ------------------------- 数据提取 -------------------------
     cleand_data = cleaned_avg.get_data(copy=True)
-    labels = cleaned_avg.events[:, -1] - 7
-    # print(f"labels(After): {labels}")
+    labels = cleaned_avg.events[:, -1] - 7  # 根据实际事件ID调整
     raw_data_selected_channels = epochs.get_data(copy=True)[:, :22, :]
-    # plt_snr(cleand_data, raw_data_selected_channels)
     normal_asr = cleaned_avg1.get_data(copy=True)
     picard_eeg = cleaned_avg2.get_data(copy=True)
     fastica_eeg = cleaned_avg3.get_data(copy=True)
-    analyze_merits.compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, fastica_eeg)
+    otp_eeg = cleaned_avg4.get_data(copy=True)
+    xdawn_eeg = cleaned_avg5.get_data(copy=True)
+
+    # ------------------------- 指标对比 -------------------------
+    analyze_merits.compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, fastica_eeg,
+                                    otp_eeg, xdawn_eeg)
+
     return cleand_data, labels
 
 

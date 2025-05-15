@@ -510,288 +510,290 @@ def compare_metrics(cleand_data, raw_data_selected_channels, normal_asr, picard_
     plt.show()
 
 
-def compare_metrics1(cleand_data, raw_data_selected_channels, normal_asr, picard_eeg, SSP_eeg, sfreq=250, fmin=0.5,
-                     fmax=100):
+def compare_metrics_radar(rmse_picard, rmse_SSP, rmse_opt, rmse_xdawn, rmse_asr, rmse_masr,
+                          nmse_picard, nmse_SSP, nmse_opt, nmse_xdawn, nmse_asr, nmse_masr,
+                          snr_picard, snr_SSP, snr_opt, snr_xdawn, snr_asr, snr_masr,
+                          mi_picard, mi_SSP, mi_opt, mi_xdawn, mi_asr, mi_masr):
+    """更新后的雷达图数据生成函数"""
+    methods_metrics = {
+        'Picard': [1 / rmse_picard, 1 / nmse_picard, snr_picard, mi_picard],
+        'SSP': [1 / rmse_SSP, 1 / nmse_SSP, snr_SSP, mi_SSP],
+        'OTP': [1 / rmse_opt, 1 / nmse_opt, snr_opt, mi_opt],
+        'XDAWN': [1 / rmse_xdawn, 1 / nmse_xdawn, snr_xdawn, mi_xdawn],  # 新增
+        'ASR': [1 / rmse_asr, 1 / nmse_asr, snr_asr, mi_asr],
+        'MASR': [1 / rmse_masr, 1 / nmse_masr, snr_masr, mi_masr]
+    }
+    return methods_metrics
+
+
+def compare_metrics1(cleand_data, raw_data_selected_channels,
+                     normal_asr, picard_eeg, SSP_eeg, opt_eeg, xdawn_eeg,
+                     sfreq=250, fmin=0.5, fmax=100):
     """
-    绘制处理后数据及另一个数据集的归一化均方误差（NMSE）、均方根误差（RMSE）、信噪比（SAR）和互信息（MI）的箱形图。
+    对比各方法（Picard-ICA、SSP、OTP、ASR、MASR）与原始数据在RMSE、NMSE、SAR、MI指标上的差异，
+    绘制箱型图和雷达图进行比较。
+
     参数：
-    cleand_data : numpy.ndarray
-        处理后的数据数组。
-    raw_data_selected_channels : numpy.ndarray
-        原始数据中选择的通道。
-    normal_asr : numpy.ndarray
-        另一个数据集。
-    raw_data_eog_channels : numpy.ndarray
-        原始数据中的眼动通道。
-    sfreq : int
-        采样频率。
-    fmin : int
-        最小频率。
-    fmax : int
-        最大频率。
+        cleand_data : numpy.ndarray
+            MASR（清理后的数据）数组。
+        raw_data_selected_channels : numpy.ndarray
+            原始数据中选择的通道数据。
+        normal_asr : numpy.ndarray
+            ASR 处理后的数据。
+        picard_eeg : numpy.ndarray
+            Picard-ICA 处理后的数据。
+        SSP_eeg : numpy.ndarray
+            SSP 处理后的数据。
+        opt_eeg : numpy.ndarray
+            新增的 OTP 处理后的数据。
+        sfreq : int
+            采样频率。
+        fmin : float
+            计算功率时的最小频率。
+        fmax : float
+            计算功率时的最大频率。
     """
-    # Calculate RMSE
-    rmse_clean = calculate_rmse(cleand_data, raw_data_selected_channels)
-    rmse_normal_asr = calculate_rmse(normal_asr, raw_data_selected_channels)
+    # 计算 RMSE
     rmse_picard = calculate_rmse(picard_eeg, raw_data_selected_channels)
     rmse_SSP = calculate_rmse(SSP_eeg, raw_data_selected_channels)
-    # Calculate SAR
+    rmse_opt = calculate_rmse(opt_eeg, raw_data_selected_channels)
+    rmse_xdawn = calculate_rmse(xdawn_eeg, raw_data_selected_channels)
+    rmse_asr = calculate_rmse(normal_asr, raw_data_selected_channels)
+    rmse_masr = calculate_rmse(cleand_data, raw_data_selected_channels)
+
+    # 计算 SAR（信噪比）
+    # 以 MASR（cleand_data）作为参考信号计算功率
     signal_power = calculate_power(cleand_data, sfreq, fmin, fmax)
-    noise_power = calculate_power(cleand_data - raw_data_selected_channels, sfreq, fmin, fmax)
-    snr_linear = signal_power / (noise_power + 1e-10)
-    snr_db = 10 * np.log10(snr_linear)
-    normal_asr_power = calculate_power(normal_asr - raw_data_selected_channels, sfreq, fmin, fmax)
-    normal_asr_snr_linear = signal_power / (normal_asr_power + 1e-10)
-    normal_asr_snr_db = 10 * np.log10(normal_asr_snr_linear)
-    picard_power = calculate_power(abs(picard_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
-    picard_snr_linear = signal_power / (picard_power + 1e-10)
-    picard_snr_db = 10 * np.log10(picard_snr_linear)
-    SSP_power = calculate_power(abs(SSP_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
-    SSP_snr_linear = signal_power / (SSP_power + 1e-10)
-    SSP_snr_db = 10 * np.log10(SSP_snr_linear)
 
-    # Calculate MI
+    noise_power_picard = calculate_power(np.abs(picard_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    snr_picard = 10 * np.log10(signal_power / (noise_power_picard + 1e-10))
+
+    noise_power_SSP = calculate_power(np.abs(SSP_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    snr_SSP = 10 * np.log10(signal_power / (noise_power_SSP + 1e-10))
+
+    noise_power_opt = calculate_power(np.abs(opt_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    snr_opt = 10 * np.log10(signal_power / (noise_power_opt + 1e-10))
+    noise_power_xdawn = calculate_power(np.abs(xdawn_eeg - raw_data_selected_channels), sfreq, fmin, fmax)
+    snr_xdawn = 10 * np.log10(signal_power / (noise_power_xdawn + 1e-10))
+
+    noise_power_asr = calculate_power(normal_asr - raw_data_selected_channels, sfreq, fmin, fmax)
+    snr_asr = 10 * np.log10(signal_power / (noise_power_asr + 1e-10))
+
+    noise_power_masr = calculate_power(cleand_data - raw_data_selected_channels, sfreq, fmin, fmax)
+    snr_masr = 10 * np.log10(signal_power / (noise_power_masr + 1e-10))
+
+    # 计算 NMSE
+    nmse_picard = calculate_nmse(picard_eeg, raw_data_selected_channels)
+    nmse_SSP = calculate_nmse(SSP_eeg, raw_data_selected_channels)
+    nmse_opt = calculate_nmse(opt_eeg, raw_data_selected_channels)
+    nmse_xdawn = calculate_nmse(xdawn_eeg, raw_data_selected_channels)
+    nmse_asr = calculate_nmse(normal_asr, raw_data_selected_channels)
+    nmse_masr = calculate_nmse(cleand_data, raw_data_selected_channels)
+
+    # 计算互信息 (MI)
     n_epochs, n_channels, _ = cleand_data.shape
-
-    # Initialize an array to store MI values
-    mi_values = np.zeros((n_channels, 4))  # Two columns for the two comparisons
-
+    # 原来的计算顺序为：Picard, SSP, ASR, MASR, OTP
+    # 现在调整为：Picard, SSP, OTP, ASR, MASR
+    mi_values = np.zeros((n_channels, 6))
     for i in range(n_channels):
-        # Discretize the signals
-        disc_cleaned = discretize_signal(cleand_data[:, i, :].flatten())
         disc_raw = discretize_signal(raw_data_selected_channels[:, i, :].flatten())
-        disc_normal_asr = discretize_signal(normal_asr[:, i, :].flatten())
         disc_picard = discretize_signal(picard_eeg[:, i, :].flatten())
         disc_SSP = discretize_signal(SSP_eeg[:, i, :].flatten())
+        disc_normal = discretize_signal(normal_asr[:, i, :].flatten())
+        disc_masr = discretize_signal(cleand_data[:, i, :].flatten())
+        disc_opt = discretize_signal(opt_eeg[:, i, :].flatten())
+        disc_xdawn = discretize_signal(xdawn_eeg[:, i, :].flatten())
 
-        # Calculate MI between cleaned and raw, and cleaned and normal ASR
         mi_values[i, 0] = mutual_info_score(disc_picard, disc_raw)
         mi_values[i, 1] = mutual_info_score(disc_SSP, disc_raw)
-        mi_values[i, 2] = mutual_info_score(disc_normal_asr, disc_raw)
-        mi_values[i, 3] = mutual_info_score(disc_cleaned, disc_raw)
+        mi_values[i, 2] = mutual_info_score(disc_opt, disc_raw)  # OTP
+        mi_values[i, 3] = mutual_info_score(disc_xdawn, disc_raw)  # Xdawn
+        mi_values[i, 4] = mutual_info_score(disc_normal, disc_raw)  # ASR
+        mi_values[i, 5] = mutual_info_score(disc_masr, disc_raw)  # MASR
 
-    # Create subplots
-    # fig, axs = plt.subplots(4, 1, figsize=(7, 14))
-
-    # 创建 2x8 网格布局
+    # ------------------------- 绘制箱型图 -------------------------
     fig = plt.figure(figsize=(14, 7))
     gs = gridspec.GridSpec(9, 14, figure=fig)
 
-    # 合并第一行格子 1-4 和 5-8
-    ax1 = fig.add_subplot(gs[0:4, 0:4])  # 单模态
-    ax2 = fig.add_subplot(gs[0:4, 10:14])  # 双模态
-
-    # 合并第二行格子 3-6
-    ax3 = fig.add_subplot(gs[2:7, 5:9], polar=True)  # 三模态，合并格子3-6
-    ax4 = fig.add_subplot(gs[5:9, 0:4])  # 三模态，合并格子3-6
-    ax5 = fig.add_subplot(gs[5:9, 10:14])  # 三模态，合并格子3-6
-
-    # RMSE
-    bplot_rmse = ax1.boxplot([rmse_picard, rmse_SSP, rmse_normal_asr, rmse_clean], patch_artist=True,
-                             showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    # RMSE 箱型图
+    ax1 = fig.add_subplot(gs[0:4, 0:4])
+    bplot_rmse = ax1.boxplot(
+        [rmse_picard, rmse_SSP, rmse_opt, rmse_xdawn, rmse_asr, rmse_masr],
+        patch_artist=True, showmeans=True, meanline=True,
+        positions=[1, 2, 3, 4, 5, 6], widths=0.5, showfliers=False)
     ax1.set_title('Root Mean Squared Error (RMSE)', fontsize=12)
     ax1.set_ylabel('RMSE', fontsize=12)
-    ax1.set_xticks([1, 2, 3, 4])
-
-    # Calculate mean RMSE for each dataset
+    ax1.set_xticks([1, 2, 3, 4, 5, 6])
     mean_rmse_values = [
         (np.mean(rmse_picard), 'Picard'),
         (np.mean(rmse_SSP), 'SSP'),
-        (np.mean(rmse_normal_asr), 'ASR'),
-        (np.mean(rmse_clean), 'MASR')
+        (np.mean(rmse_opt), 'OTP'),
+        (np.mean(rmse_xdawn), 'XDAWN'),
+        (np.mean(rmse_asr), 'ASR'),
+        (np.mean(rmse_masr), 'MASR')
     ]
-
-    # Update x-axis labels to include mean values in parentheses with line breaks
-    labels_rmse = [f'{label}\n({mean:.2e})' for mean, label in mean_rmse_values]
+    labels_rmse = [f'{label}\n({mean:.2g})' for mean, label in mean_rmse_values]
     ax1.set_xticklabels(labels_rmse, fontsize=9)
-
-    ax1.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax1.xaxis.set_minor_locator(MultipleLocator(0.1))
     ax1.yaxis.set_minor_locator(MultipleLocator(0.1))
     ax1.grid(True, linestyle='--', alpha=0.7)
-
-    # Set box colors (MASR, ASR, Picard, SSP)
-    colors = ['#CADDE6', '#D85014', '#3FA0C0', '#EDB327']
+    colors_box = ['#D85014', '#CADDE6', '#A0A0A0', '#A943A0', '#3FA0C0', '#EDB327']
     for i, patch in enumerate(bplot_rmse['boxes']):
-        patch.set_facecolor(colors[i])
+        patch.set_facecolor(colors_box[i])
         patch.set_edgecolor('black')
 
-    # SAR
-    bplot_snr = ax2.boxplot([picard_snr_db, SSP_snr_db, normal_asr_snr_db, snr_db], patch_artist=True,
-                            showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    # SAR 箱型图
+    ax2 = fig.add_subplot(gs[0:4, 10:14])
+    bplot_snr = ax2.boxplot(
+        [snr_picard, snr_SSP, snr_opt, snr_xdawn, snr_asr, snr_masr],
+        patch_artist=True, showmeans=True, meanline=True,
+        positions=[1, 2, 3, 4, 5, 6], widths=0.5, showfliers=False)
     ax2.set_title('Signal to Artifact Ratio (SAR)', fontsize=12)
     ax2.set_ylabel('SAR (dB)', fontsize=12)
-    ax2.set_xticks([1, 2, 3, 4])
-
-    # Calculate mean SAR for each dataset
+    ax2.set_xticks([1, 2, 3, 4, 5, 6])
     mean_snr_values = [
-        (np.mean(picard_snr_db), 'Picard'),
-        (np.mean(SSP_snr_db), 'SSP'),
-        (np.mean(normal_asr_snr_db), 'ASR'),
-        (np.mean(snr_db), 'MASR')
+        (np.mean(snr_picard), 'Picard'),
+        (np.mean(snr_SSP), 'SSP'),
+        (np.mean(snr_opt), 'OTP'),
+        (np.mean(snr_xdawn), 'XDAWN'),
+        (np.mean(snr_asr), 'ASR'),
+        (np.mean(snr_masr), 'MASR')
     ]
-
-    # Update x-axis labels to include mean values in parentheses with line breaks
     labels_snr = [f'{label}\n({mean:.2f})' for mean, label in mean_snr_values]
     ax2.set_xticklabels(labels_snr, fontsize=9)
-
-    ax2.xaxis.set_minor_locator(MultipleLocator(0.5))  # 设置x轴次要刻度间隔为0.1
+    ax2.xaxis.set_minor_locator(MultipleLocator(0.5))
     ax2.yaxis.set_minor_locator(MultipleLocator(0.5))
     ax2.grid(True, linestyle='--', alpha=0.7)
-
-    # Set box colors (MASR, ASR, Picard, SSP)
     for i, patch in enumerate(bplot_snr['boxes']):
-        patch.set_facecolor(colors[i])
+        patch.set_facecolor(colors_box[i])
         patch.set_edgecolor('black')
 
-    # NMSE
-    nmse_clean = calculate_nmse(cleand_data, raw_data_selected_channels)
-    nmse_normal_asr = calculate_nmse(normal_asr, raw_data_selected_channels)
-    nmse_picard = calculate_nmse(picard_eeg, raw_data_selected_channels)
-    nmse_SSP = calculate_nmse(SSP_eeg, raw_data_selected_channels)
-
-    bplot_nmse = ax4.boxplot([nmse_picard, nmse_SSP, nmse_normal_asr, nmse_clean], patch_artist=True,
-                             showmeans=True, meanline=True, positions=[1, 2, 3, 4], widths=0.5, showfliers=False)
+    # NMSE 箱型图
+    ax4 = fig.add_subplot(gs[5:9, 0:4])
+    bplot_nmse = ax4.boxplot(
+        [nmse_picard, nmse_SSP, nmse_opt, nmse_xdawn, nmse_asr, nmse_masr],
+        patch_artist=True, showmeans=True, meanline=True,
+        positions=[1, 2, 3, 4, 5, 6], widths=0.5, showfliers=False)
     ax4.set_title('Normalized Mean Squared Error (NMSE)', fontsize=12)
     ax4.set_ylabel('NMSE', fontsize=12)
-    ax4.set_xticks([1, 2, 3, 4])
-
-    # Calculate mean NMSE for each dataset
+    ax4.set_xticks([1, 2, 3, 4, 5, 6])
     mean_nmse_values = [
         (np.mean(nmse_picard), 'Picard'),
         (np.mean(nmse_SSP), 'SSP'),
-        (np.mean(nmse_normal_asr), 'ASR'),
-        (np.mean(nmse_clean), 'MASR')
+        (np.mean(nmse_opt), 'OTP'),
+        (np.mean(nmse_xdawn), 'XDAWN'),
+        (np.mean(nmse_asr), 'ASR'),
+        (np.mean(nmse_masr), 'MASR')
     ]
-
-    # Update x-axis labels to include mean values in parentheses with line breaks
     labels_nmse = [f'{label}\n({mean:.2f})' for mean, label in mean_nmse_values]
     ax4.set_xticklabels(labels_nmse, fontsize=9)
-
-    ax4.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax4.xaxis.set_minor_locator(MultipleLocator(0.1))
     ax4.yaxis.set_minor_locator(MultipleLocator(0.1))
     ax4.grid(True, linestyle='--', alpha=0.7)
-
-    # Set box colors (MASR, ASR, Picard, SSP)
     for i, patch in enumerate(bplot_nmse['boxes']):
-        patch.set_facecolor(colors[i])
+        patch.set_facecolor(colors_box[i])
         patch.set_edgecolor('black')
 
-    # MI
-    bplot_mi = ax5.boxplot(mi_values, patch_artist=True, showmeans=True, meanline=True, positions=[1, 2, 3, 4],
-                           widths=0.5, showfliers=False)
+    # MI 箱型图
+    ax5 = fig.add_subplot(gs[5:9, 10:14])
+    bplot_mi = ax5.boxplot(
+        [mi_values[:, 0], mi_values[:, 1], mi_values[:, 2], mi_values[:, 3], mi_values[:, 4], mi_values[:, 5]],
+        patch_artist=True, showmeans=True, meanline=True,
+        positions=[1, 2, 3, 4, 5, 6], widths=0.5, showfliers=False)
     ax5.set_title('Mutual Information (MI)', fontsize=12)
     ax5.set_ylabel('MI', fontsize=12)
-    ax5.set_xticks([1, 2, 3, 4])
-
-    # Calculate mean MI for each dataset
+    ax5.set_xticks([1, 2, 3, 4, 5, 6])
     mean_mi_values = [
         (np.mean(mi_values[:, 0]), 'Picard'),
         (np.mean(mi_values[:, 1]), 'SSP'),
-        (np.mean(mi_values[:, 2]), 'ASR'),
-        (np.mean(mi_values[:, 3]), 'MASR')
+        (np.mean(mi_values[:, 2]), 'OTP'),
+        (np.mean(mi_values[:, 3]), 'XDAWN'),
+        (np.mean(mi_values[:, 4]), 'ASR'),
+        (np.mean(mi_values[:, 5]), 'MASR')
     ]
-
-    # Update x-axis labels to include mean values in parentheses with line breaks
     labels_mi = [f'{label}\n({mean:.2f})' for mean, label in mean_mi_values]
     ax5.set_xticklabels(labels_mi, fontsize=9)
-
-    ax5.xaxis.set_minor_locator(MultipleLocator(0.1))  # 设置x轴次要刻度间隔为0.1
+    ax5.xaxis.set_minor_locator(MultipleLocator(0.1))
     ax5.yaxis.set_minor_locator(MultipleLocator(0.1))
     ax5.grid(True, linestyle='--', alpha=0.7)
-
-    # Set box colors (MASR, ASR, Picard, SSP)
     for i, patch in enumerate(bplot_mi['boxes']):
-        patch.set_facecolor(colors[i])
+        patch.set_facecolor(colors_box[i])
         patch.set_edgecolor('black')
 
+    # ------------------------- 绘制雷达图 -------------------------
+    ax3 = fig.add_subplot(gs[2:7, 5:9], polar=True)
+    # 按新顺序整理指标数据
     methods_metrics = compare_metrics_radar(
-        np.mean(rmse_clean), np.mean(rmse_normal_asr), np.mean(rmse_picard), np.mean(rmse_SSP),
-        np.mean(nmse_clean), np.mean(nmse_normal_asr), np.mean(nmse_picard), np.mean(nmse_SSP),
-        np.mean(snr_db), np.mean(normal_asr_snr_db), np.mean(picard_snr_db), np.mean(SSP_snr_db),
-        np.mean(mi_values[:, 3]), np.mean(mi_values[:, 2]), np.mean(mi_values[:, 0]), np.mean(mi_values[:, 1])
+        np.mean(rmse_picard), np.mean(rmse_SSP), np.mean(rmse_opt), np.mean(rmse_xdawn), np.mean(rmse_asr),
+        np.mean(rmse_masr),
+        np.mean(nmse_picard), np.mean(nmse_SSP), np.mean(nmse_opt), np.mean(nmse_xdawn), np.mean(nmse_asr),
+        np.mean(nmse_masr),
+        np.mean(snr_picard), np.mean(snr_SSP), np.mean(snr_opt), np.mean(snr_xdawn), np.mean(snr_asr),
+        np.mean(snr_masr),
+        np.mean(mi_values[:, 0]), np.mean(mi_values[:, 1]), np.mean(mi_values[:, 2]), np.mean(mi_values[:, 3]),
+        np.mean(mi_values[:, 4]), np.mean(mi_values[:, 5])
     )
 
-    for method, metrics in methods_metrics.items():
-        average_metric = np.mean(metrics)
-        metrics.append(average_metric)
+    # 提取各方法指标并增加平均值（使用副本避免原地修改）
+    methods = list(methods_metrics.keys())  # 假设顺序为：Picard, SSP, OTP, ASR, MASR
+    metrics_list = []
+    for method in methods:
+        vals = methods_metrics[method].copy()  # 复制一份数据
+        avg_val = np.mean(vals)
+        vals.append(avg_val)
+        metrics_list.append(vals)
 
-    # 2. 数据归一化并映射到 [0.2, 0.8] 区间
-    metrics = np.array(list(methods_metrics.values()))
-    min_value = metrics.min(axis=0)
-    max_value = metrics.max(axis=0)
-    norm_metrics = (metrics - min_value) / (max_value - min_value + 1e-10)  # 归一化到 [0, 1]
+    metrics_array = np.array(metrics_list)
 
-    # 非线性映射：增加中心分离效果（指数映射）
-    norm_metrics = norm_metrics ** 0.5  # 调整参数以更灵活地控制内外比例
-    norm_metrics = norm_metrics * 0.68 + 0.3  # 再次映射到 [0.2, 0.8] 区间
+    # 定义归一化函数，包含非线性映射与区间映射
+    def normalize_data(data):
+        min_vals = data.min(axis=0)
+        max_vals = data.max(axis=0)
+        norm_data = (data - min_vals) / (max_vals - min_vals + 1e-10)
+        norm_data = norm_data ** 0.5  # 非线性映射
+        return norm_data * 0.68 + 0.3  # 映射到 [0.2, 0.8]
 
-    # 3. 设置雷达图参数
-    labels = ['Average', '1/RMSE', '1/NMSE', 'MI', 'SAR']
-    num_vars = len(labels)
+    norm_metrics = normalize_data(metrics_array)
+
+    # 添加闭合点，使数据闭合成多边形
+    norm_metrics = np.concatenate((norm_metrics, norm_metrics[:, :1]), axis=1)
+
+    # 设置雷达图参数
+    radar_labels = ['Average', '1/RMSE', '1/NMSE', 'MI', 'SAR']
+    num_vars = len(radar_labels)
     angles = np.linspace(0, 2 * np.pi, num_vars, endpoint=False).tolist()
-    angles += angles[:1]  # 添加第一个角度到最后以闭合
+    angles += angles[:1]
 
-    norm_metrics = np.concatenate((norm_metrics, norm_metrics[:, [0]]), axis=1)
-    # 定义配色
-    colors = ['#EDB327', '#3FA0C0', '#CADDE6', '#D85014'] # 你提供的配色
+    # 定义雷达图颜色（确保颜色数量与方法数量一致，如果方法只有5个，则删去多余的颜色）
+    radar_colors = ['#D85014', '#CADDE6', '#A0A0A0', '#A943A0', '#3FA0C0', '#EDB327']
+
+    # 隐藏极坐标框架边缘
     for spine in ax3.spines.values():
         spine.set_visible(False)
-        # 5. 绘制每种方法的雷达图线
-    # 5. 绘制每种方法的雷达图线
-    for i, (method, values) in enumerate(methods_metrics.items()):
-        ax3.fill(angles, norm_metrics[i], alpha=0.3, color=colors[i])  # 先填充区域并应用透明度
-        ax3.plot(angles, norm_metrics[i], linewidth=1.5, label=method, color=colors[i])  # 后绘制线条
 
-    # 6. 设置径向范围并去掉径向刻度标签
-    ax3.set_ylim(0, 1)  # 设置范围从0到1
-    ax3.set_yticklabels([])  # 移除径向刻度数字
+    # 自定义绘制顺序：对应的索引为 [5, 4, 0, 1, 2, 3]
+    custom_order = [5, 4, 0, 1, 2, 3]
 
-    # 设置环绕标签布局并调整标签位置
+    for idx in custom_order:
+        method = methods[idx]
+        ax3.fill(angles, norm_metrics[idx], alpha=0.3, color=radar_colors[idx])
+        ax3.plot(angles, norm_metrics[idx], linewidth=1.5, label=method, color=radar_colors[idx])
+
+    ax3.set_ylim(0, 1)
+    ax3.set_yticklabels([])
+
+    # 设置x轴标签和对应角度，使用 tick_params 调整标签与图形之间的距离
     ax3.set_xticks(angles[:-1])
-    ax3.set_xticklabels(labels, ha='center', va='center', fontsize=14)
-    for label in ax3.get_xticklabels():
-        x_pos, y_pos = label.get_position()  # 获取原始位置
-        # 将标签位置的y坐标放大，使其远离中心
-        label.set_position((x_pos, y_pos - 0.11))  # 可以调整倍数 1.2 来控制距离
+    ax3.set_xticklabels(radar_labels, fontsize=14)
+    ax3.tick_params(axis='x', pad=15)
 
-    from matplotlib.patches import Patch
+    # 图例设置，如果需要重新排序，可以调整 new_order 列表
+    handles, labels_legend = ax3.get_legend_handles_labels()
+    # 如果顺序无需调整，可直接使用默认顺序：
+    ax3.legend(handles, labels_legend, loc='upper center',
+               bbox_to_anchor=(0.5, -0.1), ncol=3,
+               fontsize=10, handlelength=2, handleheight=1, frameon=False)
 
-    # 1. 获取当前图例句柄和标签
-    handles, labels = ax3.get_legend_handles_labels()
-
-    # 2. 自定义新的标签顺序
-    new_order = [2, 3, 1, 0]  # 重新调整顺序，Picard -> SSP -> ASR -> MASR
-
-    # 3. 创建填充色块的图例项
-    color_patches = [Patch(color=colors[i], label=labels[i]) for i in new_order]
-
-    # 4. 重新设置图例，使用手动创建的填充色块
-    ax3.legend(
-        color_patches,  # 使用填充色块作为图例项
-        [labels[i] for i in new_order],  # 标签顺序
-        loc='upper center',
-        bbox_to_anchor=(0.5, -0.1),  # 将图例放置在图形下方
-        ncol=4,  # 图例项的列数
-        fontsize=10,
-        handlelength=2,  # 图例中色块的长度
-        handleheight=1,  # 图例中色块的高度
-        frameon=False  # 去掉图例框
-    )
-
-    ax3.set_theta_offset(np.pi / 2)  # 将图旋转90度，使得第一个标签位于顶部
-    # Adjust layout and display plot
-    # plt.tight_layout()
+    ax3.set_theta_offset(np.pi / 2)
     plt.show()
 
-
-def compare_metrics_radar(rmse_clean, rmse_normal_asr, rmse_picard, rmse_SSP,
-                          nmse_clean, nmse_normal_asr, nmse_picard, nmse_SSP,
-                          snr_clean, snr_normal_asr, snr_picard, snr_SSP,
-                          mi_clean, mi_normal_asr, mi_picard, mi_SSP):
-    methods_metrics = {
-        'MASR': [1 / rmse_clean, 1 / nmse_clean, snr_clean, mi_clean],
-        'ASR': [1 / rmse_normal_asr, 1 / nmse_normal_asr, snr_normal_asr, mi_normal_asr],
-        'Picard': [1 / rmse_picard, 1 / nmse_picard, snr_picard, mi_picard],
-        'SSP': [1 / rmse_SSP, 1 / nmse_SSP, snr_SSP, mi_SSP],
-    }
-    return methods_metrics

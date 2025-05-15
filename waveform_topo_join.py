@@ -347,12 +347,14 @@ def plot_evoked_joint(
     return fig
 
 
-def plot_waveform_masr(epochs, cleaned_avg1, cleaned_avg2, cleaned_avg3, cleaned_avg4, channel_names):
-    # 生成清理后 evoked 数据并设置蒙太奇
-    cleaned_avgs = [cleaned_avg3, cleaned_avg4, cleaned_avg2, cleaned_avg1]
-    titles = ["Picard-ICA", "SSP", "ASR", "MASR"]
+def plot_waveform_masr(epochs, cleaned_avg_picard, cleaned_avg_ssp,
+                       cleaned_avg_asr, cleaned_avg_masr, cleaned_avg_opt, cleaned_avg_xdawn, channel_names):
+    # 定义比较顺序和对应标题（顺序为：Picard-ICA, SSP, ASR, MASR, OTP, Xdawn）
+    cleaned_avgs = [cleaned_avg_picard, cleaned_avg_ssp, cleaned_avg_asr, cleaned_avg_masr, cleaned_avg_opt,
+                    cleaned_avg_xdawn]
+    titles = ["MASR", "ASR", "Picard-ICA", "SSP", "OTP", "XDAWN"]
 
-    # 遍历每个处理方法，创建联合图并在其下方添加差异图
+    # 遍历每个处理方法，生成联合图
     for evoked, title in zip(cleaned_avgs, titles):
         plot_evoked_joint(
             evoked,
